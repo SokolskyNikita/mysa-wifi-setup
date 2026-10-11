@@ -11,9 +11,9 @@ Handy when the Mysa app's pairing keeps failing or after you change your router 
 - A **2.4 GHz** Wi-Fi network with WPA2 or mixed WPA2/WPA3. Mysa can't join 5 GHz-only or WPA3-only networks.
 - **Chrome, Edge or Opera** on macOS, Windows, ChromeOS or Android ([Web Bluetooth](https://developer.mozilla.org/en-US/docs/Web/API/Web_Bluetooth_API)). Not supported: iPhone/iPad, Firefox, Safari. On Linux, enable `chrome://flags/#enable-experimental-web-platform-features`.
 
-Tested with a Mysa Baseboard Lite (`BB-V2-0-L`). Other Baseboard, In-floor and AC models that show the Bluetooth icon in setup mode should work too; please open an issue with your result either way.
-
-**Not supported: Mysa Baseboard V3, Mysa for Central HVAC and the Mysa Climate Sensor.** Besides Wi-Fi, these need a credential file from Mysa's cloud sent over Bluetooth, plus a few cloud registration steps, which this page can't do. Use the Mysa app for these models. Details: [cloud-api.md](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/cloud-api.md), "Newer models".
+## Models
+- **Supported:** Mysa Baseboard Lite (`BB-V2-0-L`, tested), Mysa Baseboard V1 and V2, Mysa for In-Floor Heating and Mysa for AC. Only the Lite has been tested so far; please open an issue with your result on any other model.
+- **Coming soon:** Mysa Baseboard V3, Mysa for Central HVAC and the Mysa Climate Sensor. Besides Wi-Fi, these need a credential file from Mysa's cloud sent over Bluetooth, plus a few cloud registration steps, which this page can't do yet. Use the Mysa app for these models for now. Details: [cloud-api.md](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/cloud-api.md), "Newer models".
 
 ## Steps
 1. Click **Find Mysa** and pick the thermostat in the browser's device list.
