@@ -107,8 +107,8 @@
 
   <section>
     <h2>3. Pair</h2>
-    <p class="hint">Click Pair. The thermostat shows a code on its screen. <span id="pairHint"></span>
-      Type the code in quickly; the thermostat only shows it for a short time.</p>
+    <p class="hint">Click Pair. The thermostat will then show a code on its screen, then try to pair with your phone/laptop.
+      If the codes match, click Pair/Accept on your device. Sometimes takes 2-3 tries.</p>
     <div>Pairing: <span id="pairState" class="status">not paired</span></div>
     <div class="row">
       <button class="primary" id="pair" disabled>Pair</button>
@@ -173,13 +173,6 @@ const OS = /Android/.test(ua) ? 'android'
   : /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'ios'
   : /CrOS/.test(ua) ? 'chromeos' : /Mac/.test(ua) ? 'mac' : /Win/.test(ua) ? 'windows'
   : /Linux/.test(ua) ? 'linux' : 'other';
-const PAIR_HINT = {
-  mac: 'macOS asks for it in a "Bluetooth Pairing Request" window, which sometimes appears only as a notification in the top-right corner.',
-  windows: 'Windows or Chrome asks for it in a pairing prompt, which may appear as a notification.',
-  android: 'Android asks for it in a Bluetooth pairing request, which may appear as a notification.',
-  chromeos: 'ChromeOS asks for it in a pairing dialog.',
-  linux: "Your desktop's Bluetooth pairing dialog asks for it.",
-};
 
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -382,7 +375,7 @@ async function pair() {
   } catch (e) {
     setPair(`failed: ${e.message}`, 'err');
     log(`pairing failed: ${e.name}: ${e.message}`);
-    log(`tip: remove "Mysa" from this device's Bluetooth settings (Forget / Unpair), then Reconnect and Pair again, entering the code quickly`);
+    log(`tip: remove "Mysa" from this device's Bluetooth settings (Forget / Unpair), then Reconnect and Pair again (it sometimes takes 2-3 tries)`);
   } finally {
     busy = false; update();
   }
@@ -444,7 +437,6 @@ else if (navigator.bluetooth.getAvailability) {
   check();
   navigator.bluetooth.addEventListener?.('availabilitychanged', check);
 }
-$('pairHint').textContent = PAIR_HINT[OS] || 'Your device asks for it in a Bluetooth pairing prompt.';
 $('connect').onclick = () => choose(false);
 $('connectAll').onclick = () => choose(true);
 $('reconnect').onclick = () => device && connect();
