@@ -1,10 +1,10 @@
-# Mysa Wi-Fi Setup over Bluetooth (no app needed)
+# Mysa Wi-Fi setup over Bluetooth (no app needed)
 
 Connect a **Mysa smart thermostat to Wi-Fi from your web browser** over Bluetooth. You don't need the Mysa app or a Mysa account, and there's nothing to install.
 
 **▶ Open it: <https://sokolskynikita.github.io/mysa-wifi-setup/>**
 
-Handy when the Mysa app's pairing keeps failing, after a new router or Wi-Fi password, or when you want your Mysa on the network only for local control from **Home Assistant** or **Apple Home (HomeKit)**.
+Handy when the Mysa app's pairing keeps failing or after you change your router or Wi-Fi password. It also suits a Mysa that you only want on the network for local control from **Home Assistant** or **Apple Home (HomeKit)**.
 
 ## What you need
 - A Mysa showing the **Bluetooth icon** (setup mode). To get there, hold both arrow buttons until the 10-second countdown ends and it restarts. Mysas that show a Wi-Fi icon instead aren't supported.
@@ -21,9 +21,9 @@ Tested with a Mysa Baseboard Lite (`BB-V2-0-L`). Other Baseboard, In-floor and A
 3. Enter the Wi-Fi name and password and click **Send**. The page tells you when the thermostat has joined.
 
 ## Troubleshooting
-- **Mysa not listed:** check for the Bluetooth icon, move closer, or use *Show all nearby devices*.
+- **Mysa not listed:** check for the Bluetooth icon, move closer or use *Show all nearby devices*.
 - **Pairing fails or times out:** remove "Mysa" from your system's Bluetooth devices (Forget / Unpair), then Reconnect and Pair again. Enter the code quickly.
-- **Connection failed:** wrong password, a 5 GHz-only or WPA3-only network, or weak signal at the thermostat.
+- **Connection failed:** check the password and the signal at the thermostat. The network can't be 5 GHz-only or WPA3-only.
 - The page's *Technical log* shows every Bluetooth message.
 
 ## Home Assistant and HomeKit
@@ -34,13 +34,7 @@ It's one static HTML file, with no dependencies or analytics. A Content-Security
 To run it yourself, serve `index.html` from `https://` or `http://localhost` (e.g. `python3 -m http.server`). Web Bluetooth needs a secure context.
 
 ## How it works
-GATT service `4d790000-7361-5769-4669-436f6e666967` ("MysaWiFiConfig" in ASCII):
-
-| Characteristic | Use |
-|---|---|
-| `4d790001-…` | write: config packets |
-| `4d790002-…` | notify/read: status. Needs an encrypted link, so reading it starts pairing (passkey shown on the thermostat) |
-| `4d790003-…` | read: identify |
+GATT service `4d790000-7361-5769-4669-436f6e666967` ("MysaWiFiConfig" in ASCII) has three characteristics. Config packets are written to `4d790001-…`. Status comes from `4d790002-…` (notify/read); it needs an encrypted link, so reading it starts pairing, with the passkey shown on the thermostat. `4d790003-…` is a read-only identify value.
 
 Packets: `0x20` start, `0x21` SSID, `0x22` password, `0x2F` end. SSID and password are `[type, length, base64(UTF-8 text)]`. Send each one after the matching status notification.
 Status: `0x20`/`0x21`/`0x22` acks, `0x40` connecting, `0x41` connected, `0x42` connection failed, `0x80` timeout, `0xFD` invalid sequence, `0xFF` internal error.

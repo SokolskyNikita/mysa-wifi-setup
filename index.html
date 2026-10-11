@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
-<title>Mysa Wi-Fi Setup over Bluetooth (no app needed)</title>
+<title>Mysa Wi-Fi setup over Bluetooth (no app needed)</title>
 <meta name="description" content="Connect a Mysa smart thermostat to Wi-Fi from your browser over Bluetooth, without the Mysa app or a Mysa account. Free and open source; runs locally in Chrome or Edge.">
 <link rel="canonical" href="https://sokolskynikita.github.io/mysa-wifi-setup/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Mysa Wi-Fi Setup over Bluetooth">
+<meta property="og:title" content="Mysa Wi-Fi setup over Bluetooth">
 <meta property="og:description" content="Put a Mysa thermostat on Wi-Fi from your browser, without the Mysa app or account.">
 <meta property="og:url" content="https://sokolskynikita.github.io/mysa-wifi-setup/">
 <meta name="color-scheme" content="light dark">
@@ -69,7 +69,7 @@
 </head>
 <body>
 <main>
-  <h1>Mysa Wi-Fi Setup</h1>
+  <h1>Mysa Wi-Fi setup</h1>
   <p class="sub">Connect a Mysa smart thermostat to Wi-Fi over Bluetooth, straight from your browser, without the Mysa app or a Mysa account.
     Your Wi-Fi password goes only to the thermostat; this page can't send anything over the internet.</p>
 
@@ -80,9 +80,10 @@
     <ul>
       <li>The thermostat's screen shows the <b>Bluetooth icon</b> (setup mode). If it doesn't, hold both arrow buttons
         until the 10-second countdown ends and it restarts. If it shows a Wi-Fi icon instead, this page can't set it up.</li>
-      <li><b>Mysa Baseboard V3, Mysa for Central HVAC and the Mysa Climate Sensor won't work here.</b> Besides Wi-Fi, they
-        need a credential file from Mysa's cloud that this page can't get. Use the Mysa app for those. Tested with the
-        Baseboard Lite; other Baseboard, In-floor and AC models that show the Bluetooth icon should work.</li>
+      <li><b>Supported:</b> Mysa Baseboard Lite (tested), Mysa Baseboard V1 and V2, Mysa for In-Floor Heating and
+        Mysa for AC.</li>
+      <li><b>Coming soon:</b> Mysa Baseboard V3, Mysa for Central HVAC and the Mysa Climate Sensor. Besides Wi-Fi, they
+        need a credential file from Mysa's cloud that this page can't get yet. Use the Mysa app for those for now.</li>
       <li>Use a <b>2.4 GHz</b> network with WPA2 or mixed WPA2/WPA3 security. Mysa can't join 5 GHz-only or WPA3-only networks.</li>
       <li>Use Chrome, Edge or Opera on a Mac, Windows PC, Chromebook or Android phone, close to the thermostat.</li>
     </ul>
@@ -157,9 +158,9 @@ const NOTE = {
 };
 const FAILURES = new Set([0x42, 0x80, 0xfd, 0xff]);
 const FAILURE_HINT = {
-  0x42: 'The thermostat couldn’t join the network. Check the password, that the network is 2.4 GHz with WPA2 (not WPA3-only), and that the signal reaches the thermostat.',
+  0x42: "The thermostat couldn't join the network. Check the password, that the network is 2.4 GHz with WPA2 (not WPA3-only) and that the signal reaches the thermostat.",
   0x80: 'The thermostat gave up waiting. Check the network name and signal, then try again.',
-  0xfd: 'The thermostat lost track of the setup steps. Click Disconnect, then Reconnect, and send again.',
+  0xfd: 'The thermostat lost track of the setup steps. Click Disconnect, then Reconnect and send again.',
   0xff: 'The thermostat reported an internal error. Reset it into setup mode and try again.',
 };
 const DEVICE_INFO = [
@@ -173,11 +174,11 @@ const OS = /Android/.test(ua) ? 'android'
   : /CrOS/.test(ua) ? 'chromeos' : /Mac/.test(ua) ? 'mac' : /Win/.test(ua) ? 'windows'
   : /Linux/.test(ua) ? 'linux' : 'other';
 const PAIR_HINT = {
-  mac: 'macOS asks for it in a “Bluetooth Pairing Request” window, which sometimes appears only as a notification in the top-right corner.',
+  mac: 'macOS asks for it in a "Bluetooth Pairing Request" window, which sometimes appears only as a notification in the top-right corner.',
   windows: 'Windows or Chrome asks for it in a pairing prompt, which may appear as a notification.',
   android: 'Android asks for it in a Bluetooth pairing request, which may appear as a notification.',
   chromeos: 'ChromeOS asks for it in a pairing dialog.',
-  linux: 'Your desktop’s Bluetooth pairing dialog asks for it.',
+  linux: "Your desktop's Bluetooth pairing dialog asks for it.",
 };
 
 const $ = id => document.getElementById(id);
@@ -216,11 +217,11 @@ function supportProblem() {
     return 'Open this page over https:// (or http://localhost). Browsers turn Bluetooth off for insecure pages.';
   if (navigator.bluetooth) return '';
   if (OS === 'ios')
-    return 'iPhone and iPad browsers don’t support Web Bluetooth. Use Chrome or Edge on a computer or an Android phone.';
-  if (/Firefox\//.test(ua)) return 'Firefox doesn’t support Web Bluetooth. Open this page in Chrome or Edge.';
+    return "iPhone and iPad browsers don't support Web Bluetooth. Use Chrome or Edge on a computer or an Android phone.";
+  if (/Firefox\//.test(ua)) return "Firefox doesn't support Web Bluetooth. Open this page in Chrome or Edge.";
   if (navigator.brave) return 'Brave turns Web Bluetooth off by default. Enable brave://flags/#brave-web-bluetooth-api, or use Chrome or Edge.';
   if (OS === 'linux') return 'Chrome on Linux needs chrome://flags/#enable-experimental-web-platform-features enabled for Web Bluetooth.';
-  return 'This browser doesn’t support Web Bluetooth. Open this page in Chrome or Edge on a computer or an Android phone.';
+  return "This browser doesn't support Web Bluetooth. Open this page in Chrome or Edge on a computer or an Android phone.";
 }
 
 function packet(type, text) {
@@ -317,7 +318,7 @@ async function choose(acceptAll) {
   } catch (e) {
     if (e.name === 'NotFoundError') {
       log('no device chosen');
-      setState('no device chosen. Is the Bluetooth icon on the thermostat? Move closer, or try “Show all nearby devices”.');
+      setState('no device chosen. Is the Bluetooth icon on the thermostat? Move closer, or try "Show all nearby devices".');
     } else {
       log(`device chooser failed: ${e.name}: ${e.message}`);
       setState(e.message, 'err');
@@ -356,14 +357,14 @@ async function connect() {
       if (device.gatt.connected) device.gatt.disconnect();
       if (e.name === 'NotFoundError' && /service/i.test(e.message)) {
         busy = connecting = false; update();
-        setState('this device isn’t a Mysa in setup mode (no Wi-Fi setup service)', 'err');
+        setState("this device isn't a Mysa in setup mode (no Wi-Fi setup service)", 'err');
         return;
       }
       if (attempt < 3) await sleep(1500);
     }
   }
   busy = connecting = false; update();
-  setState('couldn’t connect. Move closer and click Reconnect.', 'err');
+  setState("couldn't connect. Move closer and click Reconnect.", 'err');
   $('logBox').open = true;
 }
 
@@ -381,7 +382,7 @@ async function pair() {
   } catch (e) {
     setPair(`failed: ${e.message}`, 'err');
     log(`pairing failed: ${e.name}: ${e.message}`);
-    log('tip: remove "Mysa" from this device’s Bluetooth settings (Forget / Unpair), then Reconnect and Pair again, entering the code quickly');
+    log(`tip: remove "Mysa" from this device's Bluetooth settings (Forget / Unpair), then Reconnect and Pair again, entering the code quickly`);
   } finally {
     busy = false; update();
   }
@@ -421,7 +422,7 @@ async function sendWifi() {
     setMsg('Waiting for the thermostat to join the network (up to 90 s)…');
     await waitFor(0x41, i, 90000);
     setState('on Wi-Fi', 'ok');
-    setMsg(`Done: the thermostat joined “${ssid}”. If your model supports HomeKit, you can now add it to Apple Home or Home Assistant (HomeKit Device integration) with its setup code.`, 'ok');
+    setMsg(`Done: the thermostat joined "${ssid}". If your model supports HomeKit, you can now add it to Apple Home or Home Assistant (HomeKit Device integration) with its setup code.`, 'ok');
     log('done: the thermostat reports it joined the network');
     $('pw').value = '';
   } catch (e) {
