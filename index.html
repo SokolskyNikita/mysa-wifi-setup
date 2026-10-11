@@ -150,24 +150,31 @@ const SVC_SCAN   = '4d790000-7361-2053-5349-442b52535349'; // "Mysa SSID+RSSI"
 const SVC_FILE   = 'ecaa050b-0da4-e394-d64c-5d08e47cb41d';
 const OPTIONAL_SERVICES = [SVC_WIFI, SVC_SCAN, SVC_FILE, 'device_information'];
 
-const PKT = { START_CONFIG: 0x20, SSID: 0x21, PASSWORD: 0x22, END_CONFIG: 0x2f };
-const NOTE = {
-  0x20: 'START_CONFIG_READY', 0x21: 'SSID_RECEIVED', 0x22: 'PASSWORD_RECEIVED',
-  0x40: 'CONNECTING', 0x41: 'CONNECTION_ESTABLISHED', 0x42: 'CONNECTION_FAILED',
-  0x80: 'TIMEOUT', 0xfd: 'INVALID_SEQUENCE', 0xff: 'INTERNAL_ERROR',
+const PACKET_TYPES = { START_CONFIG: 0x20, SSID: 0x21, PASSWORD: 0x22, END_CONFIG: 0x2f };
+const STATUS = {
+  START_CONFIG_READY: 0x20, SSID_RECEIVED: 0x21, PASSWORD_RECEIVED: 0x22,
+  CONNECTING: 0x40, CONNECTION_ESTABLISHED: 0x41, CONNECTION_FAILED: 0x42,
+  TIMEOUT: 0x80, INVALID_SEQUENCE: 0xfd, INTERNAL_ERROR: 0xff,
 };
-const FAILURES = new Set([0x42, 0x80, 0xfd, 0xff]);
+const STATUS_NAMES = Object.fromEntries(Object.entries(STATUS).map(([name, code]) => [code, name]));
 const FAILURE_HINT = {
-  0x42: "The thermostat couldn't join the network. Check the password, that the network is 2.4 GHz with WPA2 (not WPA3-only) and that the signal reaches the thermostat.",
-  0x80: 'The thermostat gave up waiting. Check the network name and signal, then try again.',
-  0xfd: 'The thermostat lost track of the setup steps. Click Disconnect, then Reconnect and send again.',
-  0xff: 'The thermostat reported an internal error. Reset it into setup mode and try again.',
+  [STATUS.CONNECTION_FAILED]: "The thermostat couldn't join the network. Check the password, that the network is 2.4 GHz with WPA2 (not WPA3-only) and that the signal reaches the thermostat.",
+  [STATUS.TIMEOUT]: 'The thermostat gave up waiting. Check the network name and signal, then try again.',
+  [STATUS.INVALID_SEQUENCE]: 'The thermostat lost track of the setup steps. Click Disconnect, then Reconnect and send again.',
+  [STATUS.INTERNAL_ERROR]: 'The thermostat reported an internal error. Reset it into setup mode and try again.',
 };
+const FAILURE_CODES = new Set(Object.keys(FAILURE_HINT).map(Number));
+const CONNECT_ATTEMPTS = 3;
+const CONNECT_RETRY_MS = 1500;
+const ACK_TIMEOUT_MS = 15000;
+const PAIR_TIMEOUT_MS = 90000;
+const JOIN_TIMEOUT_MS = 90000;
 const DEVICE_INFO = [
   ['Manufacturer', 0x2a29], ['Model', 0x2a24], ['Serial', 0x2a25],
   ['Hardware', 0x2a27], ['Firmware', 0x2a26], ['Software', 0x2a28],
 ];
 
+// Browser support and shared state.
 const ua = navigator.userAgent;
 const OS = /Android/.test(ua) ? 'android'
   : /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'ios'
@@ -175,34 +182,71 @@ const OS = /Android/.test(ua) ? 'android'
   : /Linux/.test(ua) ? 'linux' : 'other';
 
 const $ = id => document.getElementById(id);
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-let device = null, statusChar = null, configChar = null;
-let paired = false, busy = false, connecting = false;
-let notes = [];          // every status notification received, in order
-let noteWaiters = [];    // pending waitFor() calls
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+let device = null;
+let statusChar = null;
+let configChar = null;
+let paired = false;
+let busy = false;
+let connecting = false;
+let statusHistory = [];  // Notifications in order, including those received during a write.
+let statusWaiters = [];  // Pending waitForStatus() calls.
 
-function log(msg) {
-  const t = new Date().toLocaleTimeString();
-  $('log').textContent += `[${t}] ${msg}\n`;
-  $('log').scrollTop = $('log').scrollHeight;
+function connected() {
+  return !!(device?.gatt?.connected && statusChar && configChar);
 }
-function setState(text, cls = '') { $('state').textContent = text; $('state').className = `status ${cls}`; }
-function setPair(text, cls = '') { $('pairState').textContent = text; $('pairState').className = `status ${cls}`; }
-function setMsg(text, cls = '') { $('sendMsg').textContent = text; $('sendMsg').className = `msg ${cls}`; }
-function showBanner(text) { $('banner').textContent = text; $('banner').hidden = !text; }
-const connected = () => !!(device && device.gatt.connected && configChar);
-const hex = dv => [...new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength)].map(b => b.toString(16).padStart(2, '0')).join(' ');
-const ascii = dv => new TextDecoder().decode(dv).replace(/\0+$/, '');
-const noteName = code => NOTE[code] || `unknown 0x${code.toString(16)}`;
 
-function update() {
-  const ok = !!navigator.bluetooth && window.isSecureContext;
-  $('connect').disabled = $('connectAll').disabled = !ok || busy;
-  $('reconnect').hidden = !device || connected();
+// Keep UI updates and action locking separate from the Bluetooth protocol.
+function log(message) {
+  const timestamp = new Date().toLocaleTimeString();
+  const output = $('log');
+  output.textContent += `[${timestamp}] ${message}\n`;
+  output.scrollTop = output.scrollHeight;
+}
+
+function setText(id, text, className) {
+  const element = $(id);
+  element.textContent = text;
+  element.className = className;
+}
+
+function setState(text, cls = '') { setText('state', text, `status ${cls}`); }
+function setPairState(text, cls = '') { setText('pairState', text, `status ${cls}`); }
+function setMsg(text, cls = '') { setText('sendMsg', text, `msg ${cls}`); }
+
+function showBanner(text) {
+  $('banner').textContent = text;
+  $('banner').hidden = !text;
+}
+
+function updateControls() {
+  const supported = !!navigator.bluetooth && window.isSecureContext;
+  const isConnected = connected();
+  $('connect').disabled = $('connectAll').disabled = !supported || busy;
+  $('reconnect').hidden = !device || isConnected;
   $('reconnect').disabled = busy;
-  $('disconnect').disabled = busy || !connected();
-  $('pair').disabled = busy || !connected();
-  $('send').disabled = busy || !connected();
+  $('disconnect').disabled = busy || !isConnected;
+  $('pair').disabled = busy || !isConnected;
+  $('send').disabled = busy || !isConnected;
+}
+
+async function runAction(action) {
+  if (busy) return;
+  busy = true;
+  updateControls();
+  try {
+    await action();
+  } catch (error) {
+    // Expected failures have more specific messages inside each action.
+    setState(`failed: ${error.message}`, 'err');
+    log(`failed: ${error.name}: ${error.message}`);
+    $('logBox').open = true;
+  } finally {
+    busy = false;
+    updateControls();
+  }
 }
 
 function supportProblem() {
@@ -217,88 +261,152 @@ function supportProblem() {
   return "This browser doesn't support Web Bluetooth. Open this page in Chrome or Edge on a computer or an Android phone.";
 }
 
-function packet(type, text) {
-  // [type, length, base64(utf8(text)) as ASCII]
-  const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(text)));
-  const out = new Uint8Array(2 + b64.length);
-  out[0] = type; out[1] = b64.length;
-  for (let i = 0; i < b64.length; i++) out[2 + i] = b64.charCodeAt(i);
-  return out;
+// Packet encoding and ordered status acknowledgements.
+function toHex(value) {
+  return [...new Uint8Array(value.buffer, value.byteOffset, value.byteLength)]
+    .map(byte => byte.toString(16).padStart(2, '0')).join(' ');
 }
 
-async function write(bytes, label) {
+function decodeText(value) {
+  return decoder.decode(value).replace(/\0+$/, '');
+}
+
+function statusName(code) {
+  return STATUS_NAMES[code] || `unknown 0x${code.toString(16)}`;
+}
+
+function encodePacket(type, text) {
+  // [type, length, base64(utf8(text)) as ASCII]
+  const base64 = btoa(String.fromCharCode(...encoder.encode(text)));
+  const bytes = new Uint8Array(2 + base64.length);
+  bytes[0] = type;
+  bytes[1] = base64.length;
+  for (let i = 0; i < base64.length; i++) bytes[2 + i] = base64.charCodeAt(i);
+  return bytes;
+}
+
+async function writePacket(bytes, label) {
+  const characteristic = configChar;
+  if (!connected()) throw new Error('Bluetooth connection lost');
   log(`sending ${label}…`);
-  if (configChar.properties.write) await configChar.writeValueWithResponse(bytes);
-  else await configChar.writeValueWithoutResponse(bytes);
+  if (characteristic.properties.write) await characteristic.writeValueWithResponse(bytes);
+  else await characteristic.writeValueWithoutResponse(bytes);
   log(`→ ${label} (${bytes.length} bytes)`);
 }
 
-function onStatus(ev) {
-  const v = ev.target.value;
-  const code = v.byteLength ? v.getUint8(0) : -1;
-  log(`← ${noteName(code)} [${hex(v)}]`);
-  notes.push(code);
-  noteWaiters.forEach(w => w.check());
+function onStatus(event) {
+  if (event.target !== statusChar) return;
+  const value = event.target.value;
+  const code = value.byteLength ? value.getUint8(0) : -1;
+  log(`← ${statusName(code)} [${toHex(value)}]`);
+  statusHistory.push(code);
+  statusWaiters.slice().forEach(waiter => waiter.check());
 }
 
-function waitFor(code, fromIndex, timeoutMs) {
+function waitForStatus(code, fromIndex, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const w = {
+    let settled = false;
+    const waiter = {
       check() {
-        for (let i = fromIndex; i < notes.length; i++) {
-          if (notes[i] === code) return done(null);
-          if (FAILURES.has(notes[i])) return done(Object.assign(new Error(NOTE[notes[i]]), { code: notes[i] }));
+        for (let i = fromIndex; i < statusHistory.length; i++) {
+          const received = statusHistory[i];
+          if (received === code) return finish();
+          if (FAILURE_CODES.has(received)) {
+            return finish(Object.assign(new Error(statusName(received)), { code: received }));
+          }
         }
+        // A disconnect may happen during the write, before this waiter is registered.
+        if (!connected()) finish(new Error('Bluetooth connection lost'));
       },
-      fail: err => done(err),
+      fail: error => finish(error),
     };
-    const timer = setTimeout(() => done(new Error(`no ${NOTE[code]} within ${timeoutMs / 1000} s`)), timeoutMs);
-    function done(err) {
+    const timer = setTimeout(() => {
+      finish(new Error(`no ${statusName(code)} within ${timeoutMs / 1000} s`));
+    }, timeoutMs);
+
+    function finish(error) {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      noteWaiters = noteWaiters.filter(x => x !== w);
-      err ? reject(err) : resolve();
+      statusWaiters = statusWaiters.filter(pending => pending !== waiter);
+      if (error) reject(error);
+      else resolve();
     }
-    noteWaiters.push(w);
-    w.check();
+
+    statusWaiters.push(waiter);
+    waiter.check();
   });
 }
 
-function withTimeout(promise, ms, message) {
-  let timer;
-  return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })])
-    .finally(() => clearTimeout(timer));
+async function writeAndWait(bytes, label, expectedStatus) {
+  // Record the cursor before writing: a notification can arrive before the write resolves.
+  const fromIndex = statusHistory.length;
+  await writePacket(bytes, label);
+  await waitForStatus(expectedStatus, fromIndex, ACK_TIMEOUT_MS);
 }
 
+function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// Bluetooth connection lifecycle and optional device details.
 async function readDeviceInfo(server, wifiService) {
   const rows = [['Bluetooth name', device.name || '(none)']];
   try {
-    const svc = await server.getPrimaryService('device_information');
+    const service = await server.getPrimaryService('device_information');
     for (const [name, uuid] of DEVICE_INFO) {
-      try { rows.push([name, ascii(await (await svc.getCharacteristic(uuid)).readValue())]); }
-      catch (e) { /* missing, or blocked by Web Bluetooth (e.g. serial number) */ }
+      try {
+        const characteristic = await service.getCharacteristic(uuid);
+        rows.push([name, decodeText(await characteristic.readValue())]);
+      } catch {
+        // Optional: missing, or blocked by Web Bluetooth (e.g. serial number).
+      }
     }
-  } catch (e) { log(`device info service unavailable: ${e.message}`); }
+  } catch (error) {
+    log(`device info service unavailable: ${error.message}`);
+  }
   try {
-    const v = await (await wifiService.getCharacteristic(CH_IDENT)).readValue();
-    rows.push(['Identify', `${ascii(v)}  [${hex(v)}]`]);
-  } catch (e) { log(`identify read failed: ${e.message}`); }
-  $('info').replaceChildren(...rows.flatMap(([k, v]) => {
-    const dt = document.createElement('dt'); dt.textContent = k;
-    const dd = document.createElement('dd'); dd.textContent = v;
-    return [dt, dd];
-  }));
-  rows.forEach(([k, v]) => log(`${k}: ${v}`));
+    const characteristic = await wifiService.getCharacteristic(CH_IDENT);
+    const value = await characteristic.readValue();
+    rows.push(['Identify', `${decodeText(value)}  [${toHex(value)}]`]);
+  } catch (error) {
+    log(`identify read failed: ${error.message}`);
+  }
+  return rows;
 }
 
-function onDisconnected() {
-  statusChar = configChar = null;
+function showDeviceInfo(rows) {
+  $('info').replaceChildren(...rows.flatMap(([name, value]) => {
+    const term = document.createElement('dt');
+    term.textContent = name;
+    const description = document.createElement('dd');
+    description.textContent = value;
+    return [term, description];
+  }));
+  rows.forEach(([name, value]) => log(`${name}: ${value}`));
+}
+
+function clearConnection() {
+  statusChar?.removeEventListener('characteristicvaluechanged', onStatus);
+  statusChar = null;
+  configChar = null;
   paired = false;
-  noteWaiters.slice().forEach(w => w.fail(new Error('Bluetooth connection lost')));
+  statusWaiters.slice().forEach(waiter => waiter.fail(new Error('Bluetooth connection lost')));
+}
+
+function onDisconnected(event) {
+  // Ignore a queued event from an old device or a connection already re-established.
+  if (event.target !== device || device.gatt.connected) return;
+  clearConnection();
   if (connecting) return;
   log('disconnected');
   setState('disconnected');
-  setPair('not paired');
-  update();
+  setPairState('not paired');
+  updateControls();
 }
 
 async function choose(acceptAll) {
@@ -308,146 +416,182 @@ async function choose(acceptAll) {
       ? { acceptAllDevices: true, optionalServices: OPTIONAL_SERVICES }
       : { filters: [{ services: [SVC_WIFI] }, { namePrefix: 'Mysa' }, { namePrefix: 'MYSA' }, { namePrefix: 'mysa' }],
           optionalServices: OPTIONAL_SERVICES });
-  } catch (e) {
-    if (e.name === 'NotFoundError') {
+  } catch (error) {
+    if (error.name === 'NotFoundError') {
       log('no device chosen');
       setState('no device chosen. Is the Bluetooth icon on the thermostat? Move closer, or try "Show all nearby devices".');
     } else {
-      log(`device chooser failed: ${e.name}: ${e.message}`);
-      setState(e.message, 'err');
+      log(`device chooser failed: ${error.name}: ${error.message}`);
+      setState(error.message, 'err');
     }
     return;
   }
-  if (device && device !== chosen && device.gatt.connected) device.gatt.disconnect();
-  device = chosen;
-  device.addEventListener('gattserverdisconnected', onDisconnected);
+  if (device !== chosen) {
+    if (device) {
+      device.removeEventListener('gattserverdisconnected', onDisconnected);
+      if (device.gatt?.connected) device.gatt.disconnect();
+    }
+    clearConnection();
+    device = chosen;
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+  }
   await connect();
 }
 
 async function connect() {
-  busy = connecting = true; update();
+  connecting = true;
+  clearConnection();
+  statusHistory = [];
   setState('connecting…');
-  setPair('not paired');
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      log(`connecting to "${device.name || device.id}"${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
-      const server = await device.gatt.connect();
-      const svc = await server.getPrimaryService(SVC_WIFI);
-      const status = await svc.getCharacteristic(CH_STATUS);
-      const config = await svc.getCharacteristic(CH_CONFIG);
-      status.addEventListener('characteristicvaluechanged', onStatus);
-      await status.startNotifications();
-      statusChar = status; configChar = config;
-      log(`config characteristic: write=${config.properties.write} writeWithoutResponse=${config.properties.writeWithoutResponse}`);
-      await readDeviceInfo(server, svc);
-      setState('connected', 'ok');
-      log('next: Pair (step 3)');
-      busy = connecting = false; update();
-      return;
-    } catch (e) {
-      log(`connect failed: ${e.name}: ${e.message}`);
-      statusChar = configChar = null;
-      if (device.gatt.connected) device.gatt.disconnect();
-      if (e.name === 'NotFoundError' && /service/i.test(e.message)) {
-        busy = connecting = false; update();
-        setState("this device isn't a Mysa in setup mode (no Wi-Fi setup service)", 'err');
+  setPairState('not paired');
+  try {
+    for (let attempt = 1; attempt <= CONNECT_ATTEMPTS; attempt++) {
+      try {
+        log(`connecting to "${device.name || device.id}"${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SVC_WIFI);
+        const status = await service.getCharacteristic(CH_STATUS);
+        const config = await service.getCharacteristic(CH_CONFIG);
+        statusChar = status;
+        configChar = config;
+        status.addEventListener('characteristicvaluechanged', onStatus);
+        await status.startNotifications();
+        log(`config characteristic: write=${config.properties.write} writeWithoutResponse=${config.properties.writeWithoutResponse}`);
+        const rows = await readDeviceInfo(server, service);
+        if (!connected()) throw new Error('Bluetooth connection lost');
+        showDeviceInfo(rows);
+        setState('connected', 'ok');
+        log('next: Pair (step 3)');
         return;
+      } catch (error) {
+        log(`connect failed: ${error.name}: ${error.message}`);
+        clearConnection();
+        if (device.gatt?.connected) device.gatt.disconnect();
+        if (error.name === 'NotFoundError' && /service/i.test(error.message)) {
+          setState("this device isn't a Mysa in setup mode (no Wi-Fi setup service)", 'err');
+          return;
+        }
+        if (attempt < CONNECT_ATTEMPTS) await sleep(CONNECT_RETRY_MS);
       }
-      if (attempt < 3) await sleep(1500);
     }
+    setState("couldn't connect. Move closer and click Reconnect.", 'err');
+    $('logBox').open = true;
+  } finally {
+    connecting = false;
   }
-  busy = connecting = false; update();
-  setState("couldn't connect. Move closer and click Reconnect.", 'err');
-  $('logBox').open = true;
 }
 
+// Pairing and Wi-Fi provisioning, in the same order as the official app.
 async function pair() {
   // The status characteristic needs an encrypted link, so reading it makes the OS
   // pair: the thermostat shows a passkey and the OS (or browser) prompts for it.
-  busy = true; update();
-  setPair('waiting for the code…');
+  paired = false;
+  setPairState('waiting for the code…');
   log('pairing: the thermostat should now show a code');
   try {
-    const v = await withTimeout(statusChar.readValue(), 90000, 'no answer within 90 s');
+    const characteristic = statusChar;
+    if (!connected()) throw new Error('Bluetooth connection lost');
+    const value = await withTimeout(characteristic.readValue(), PAIR_TIMEOUT_MS, 'no answer within 90 s');
+    if (!connected() || statusChar !== characteristic) throw new Error('Bluetooth connection lost');
     paired = true;
-    setPair('paired', 'ok');
-    log(`paired; status ${v.byteLength ? `${noteName(v.getUint8(0))} [${hex(v)}]` : '(empty)'}`);
-  } catch (e) {
-    setPair(`failed: ${e.message}`, 'err');
-    log(`pairing failed: ${e.name}: ${e.message}`);
+    setPairState('paired', 'ok');
+    log(`paired; status ${value.byteLength ? `${statusName(value.getUint8(0))} [${toHex(value)}]` : '(empty)'}`);
+  } catch (error) {
+    setPairState(`failed: ${error.message}`, 'err');
+    log(`pairing failed: ${error.name}: ${error.message}`);
     log(`tip: remove "Mysa" from this device's Bluetooth settings (Forget / Unpair), then Reconnect and Pair again (it sometimes takes 2-3 tries)`);
-  } finally {
-    busy = false; update();
   }
   return paired;
 }
 
-function validate(ssid, pw) {
+function validateCredentials(ssid, password) {
   if (!ssid) return 'Enter the network name.';
-  if (new TextEncoder().encode(ssid).length > 32) return 'Network names are at most 32 bytes long.';
-  if (pw.length > 0 && pw.length < 8) return 'Wi-Fi (WPA2) passwords are at least 8 characters.';
-  if (pw.length > 63 && !/^[0-9a-f]{64}$/i.test(pw)) return 'Wi-Fi (WPA2) passwords are at most 63 characters.';
+  if (encoder.encode(ssid).length > 32) return 'Network names are at most 32 bytes long.';
+  if (password.length > 0 && password.length < 8) return 'Wi-Fi (WPA2) passwords are at least 8 characters.';
+  if (password.length > 63 && !/^[0-9a-f]{64}$/i.test(password)) return 'Wi-Fi (WPA2) passwords are at most 63 characters.';
   return '';
 }
 
 async function sendWifi() {
-  const ssid = $('ssid').value, pw = $('pw').value;
-  const problem = validate(ssid, pw);
-  if (problem) { setMsg(problem, 'err'); return; }
-  if (!pw && !confirm('No password entered. Only continue if this is an open network.')) return;
+  const ssid = $('ssid').value;
+  const password = $('pw').value;
+  const problem = validateCredentials(ssid, password);
+  if (problem) {
+    setMsg(problem, 'err');
+    return;
+  }
+  if (!password && !confirm('No password entered. Only continue if this is an open network.')) return;
   setMsg('');
-  if (!paired && !(await pair())) { setMsg('Pair first (step 3).', 'err'); return; }
-  busy = true; update();
+  if (!paired && !(await pair())) {
+    setMsg('Pair first (step 3).', 'err');
+    return;
+  }
   try {
     setState('sending…');
-    let i = notes.length;
-    await write(Uint8Array.of(PKT.START_CONFIG), 'START_CONFIG');
-    await waitFor(0x20, i, 15000);
-    i = notes.length;
-    await write(packet(PKT.SSID, ssid), `SSID "${ssid}"`);
-    await waitFor(0x21, i, 15000);
-    i = notes.length;
-    await write(packet(PKT.PASSWORD, pw), `PASSWORD (${pw.length} chars)`);
-    await waitFor(0x22, i, 15000);
-    i = notes.length;
-    await write(Uint8Array.of(PKT.END_CONFIG), 'END_CONFIG');
+    await writeAndWait(Uint8Array.of(PACKET_TYPES.START_CONFIG), 'START_CONFIG', STATUS.START_CONFIG_READY);
+    await writeAndWait(encodePacket(PACKET_TYPES.SSID, ssid), `SSID "${ssid}"`, STATUS.SSID_RECEIVED);
+    await writeAndWait(encodePacket(PACKET_TYPES.PASSWORD, password), `PASSWORD (${password.length} chars)`, STATUS.PASSWORD_RECEIVED);
+
+    const fromIndex = statusHistory.length;
+    await writePacket(Uint8Array.of(PACKET_TYPES.END_CONFIG), 'END_CONFIG');
     setState('thermostat is joining Wi-Fi…');
     setMsg('Waiting for the thermostat to join the network (up to 90 s)…');
-    await waitFor(0x41, i, 90000);
+    await waitForStatus(STATUS.CONNECTION_ESTABLISHED, fromIndex, JOIN_TIMEOUT_MS);
     setState('on Wi-Fi', 'ok');
     setMsg(`Done: the thermostat joined "${ssid}". If your model supports HomeKit, you can now add it to Apple Home or Home Assistant (HomeKit Device integration) with its setup code.`, 'ok');
     log('done: the thermostat reports it joined the network');
     $('pw').value = '';
-  } catch (e) {
+  } catch (error) {
     setState('failed', 'err');
-    setMsg(FAILURE_HINT[e.code] || `Failed: ${e.message}. Check the technical log below, then try again.`, 'err');
-    log(`failed: ${e.message}`);
+    setMsg(FAILURE_HINT[error.code] || `Failed: ${error.message}. Check the technical log below, then try again.`, 'err');
+    log(`failed: ${error.message}`);
     $('logBox').open = true;
-  } finally {
-    busy = false; update();
   }
 }
 
-const problem = supportProblem();
-if (problem) { showBanner(problem); setState('unavailable', 'err'); }
-else if (navigator.bluetooth.getAvailability) {
-  const check = () => navigator.bluetooth.getAvailability()
-    .then(ok => showBanner(ok ? '' : 'Bluetooth looks turned off or missing on this device. Turn it on, then try again.'))
-    .catch(() => {});
-  check();
-  navigator.bluetooth.addEventListener?.('availabilitychanged', check);
+// Page initialization and non-Bluetooth actions.
+async function copyLog() {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable in this browser.');
+    await navigator.clipboard.writeText($('log').textContent);
+    $('copyLog').textContent = 'Copied';
+    setTimeout(() => { $('copyLog').textContent = 'Copy log'; }, 1500);
+  } catch (error) {
+    log(`copy failed: ${error.message}`);
+  }
 }
-$('connect').onclick = () => choose(false);
-$('connectAll').onclick = () => choose(true);
-$('reconnect').onclick = () => device && connect();
-$('disconnect').onclick = () => device && device.gatt.disconnect();
-$('pair').onclick = pair;
-$('send').onclick = sendWifi;
-$('showPw').onchange = e => { $('pw').type = e.target.checked ? 'text' : 'password'; };
-$('copyLog').onclick = () => navigator.clipboard.writeText($('log').textContent)
-  .then(() => { $('copyLog').textContent = 'Copied'; setTimeout(() => { $('copyLog').textContent = 'Copy log'; }, 1500); })
-  .catch(e => log(`copy failed: ${e.message}`));
-update();
+
+async function checkBluetoothAvailability() {
+  try {
+    const available = await navigator.bluetooth.getAvailability();
+    showBanner(available ? '' : 'Bluetooth looks turned off or missing on this device. Turn it on, then try again.');
+  } catch {
+    // This optional check must not prevent opening the device chooser.
+  }
+}
+
+function initialize() {
+  const problem = supportProblem();
+  if (problem) {
+    showBanner(problem);
+    setState('unavailable', 'err');
+  } else if (navigator.bluetooth.getAvailability) {
+    checkBluetoothAvailability();
+    navigator.bluetooth.addEventListener?.('availabilitychanged', checkBluetoothAvailability);
+  }
+
+  $('connect').onclick = () => runAction(() => choose(false));
+  $('connectAll').onclick = () => runAction(() => choose(true));
+  $('reconnect').onclick = () => runAction(() => device && connect());
+  $('disconnect').onclick = () => runAction(() => device?.gatt?.disconnect());
+  $('pair').onclick = () => runAction(pair);
+  $('send').onclick = () => runAction(sendWifi);
+  $('showPw').onchange = event => { $('pw').type = event.target.checked ? 'text' : 'password'; };
+  $('copyLog').onclick = copyLog;
+  updateControls();
+}
+
+initialize();
 </script>
 </body>
 </html>
