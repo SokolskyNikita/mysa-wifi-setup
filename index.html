@@ -20,13 +20,13 @@
   :root {
     --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #5f6b7a;
     --border: #d9dee5; --accent: #2563eb; --accent-text: #ffffff;
-    --ok: #15803d; --err: #b91c1c; --warn-bg: #fef3c7; --warn-text: #78350f;
+    --ok: #15803d; --err: #b91c1c; --signal-weak: #926000; --warn-bg: #fef3c7; --warn-text: #78350f;
     --log-bg: #0f172a; --log-text: #e2e8f0;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0d1117; --card: #161b22; --text: #e6edf3; --muted: #8b949e;
-      --border: #30363d; --accent: #3b82f6; --ok: #4ade80; --err: #f87171;
+      --border: #30363d; --accent: #3b82f6; --ok: #4ade80; --err: #f87171; --signal-weak: #fbbf24;
       --warn-bg: #3b2f0b; --warn-text: #fde68a; --log-bg: #010409;
     }
   }
@@ -61,12 +61,16 @@
   p.msg { margin: 10px 0 0; font-size: 14px; }
   p.msg:empty { display: none; }
   .networks { margin: 12px 0; }
-  .networks summary { cursor: pointer; }
   .network-list { max-height: 260px; overflow: auto; margin-top: 10px; }
   .network-list table { width: 100%; border-collapse: collapse; font-size: 14px; }
   .network-list th, .network-list td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
   .network-list th:first-child, .network-list td:first-child { overflow-wrap: anywhere; }
   .network-list th:last-child, .network-list td:last-child { text-align: right; white-space: nowrap; }
+  .signal-good { color: var(--ok); }
+  .signal-weak { color: var(--signal-weak); }
+  .signal-poor { color: var(--err); }
+  .signal-label { display: block; font-size: 12px; font-weight: 600; }
+  .network-list .signal-note { margin: 8px 0 0; font-size: 12px; }
   details.card summary { cursor: pointer; font-weight: 600; }
   pre#log { background: var(--log-bg); color: var(--log-text); border-radius: 8px; padding: 12px;
             font: 12px/1.5 ui-monospace, Menlo, monospace; max-height: 320px; overflow: auto;
@@ -124,9 +128,8 @@
 
   <section>
     <h2>4. Wi-Fi</h2>
-    <details class="networks">
-      <summary>Networks seen by the thermostat</summary>
-      <p class="hint">After pairing, check which networks your thermostat can see and their signal strength.</p>
+    <div class="networks">
+      <p class="hint">After pairing, ask the thermostat to list the Wi-Fi networks it can see.</p>
       <div class="row"><button id="showNetworks" disabled>Show networks</button></div>
       <p id="networkMsg" class="msg" role="status" aria-live="polite"></p>
       <div id="networkList" class="network-list" hidden>
@@ -134,8 +137,9 @@
           <thead><tr><th scope="col">Network name</th><th scope="col">Signal</th></tr></thead>
           <tbody id="networkRows"></tbody>
         </table>
+        <p class="hint signal-note">Green: good (−70 dBm or stronger). Amber: weak (−71 to −79 dBm). Red: poor (−80 dBm or weaker). Signal quality is an estimate; interference can still affect reliability.</p>
       </div>
-    </details>
+    </div>
     <label for="ssid">Network name (2.4 GHz)</label>
     <input id="ssid" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
     <label for="pw">Password</label>
@@ -540,14 +544,28 @@ function decodeNetwork(value) {
   return { ssid, rssi: value.getInt8(length + 1) };
 }
 
+function signalQuality(rssi) {
+  // General Wi-Fi guidance, not a Mysa-specific minimum or a connectivity test.
+  if (rssi >= -70) return { level: 'good', label: 'Good', hint: 'Likely sufficient for normal thermostat use.' };
+  if (rssi > -80) return { level: 'weak', label: 'Weak', hint: 'The connection may be unreliable. Improve Wi-Fi coverage if possible.' };
+  return { level: 'poor', label: 'Poor', hint: 'An unreliable connection is likely. Improve Wi-Fi coverage.' };
+}
+
 function showNetworkRows(networks) {
   $('networkRows').replaceChildren(...networks.map(({ ssid, rssi }) => {
     const row = document.createElement('tr');
-    for (const text of [ssid || '(Hidden network)', `${rssi} dBm`]) {
-      const cell = document.createElement('td');
-      cell.textContent = text;
-      row.append(cell);
-    }
+    const name = document.createElement('td');
+    name.textContent = ssid || '(Hidden network)';
+    const signal = document.createElement('td');
+    const quality = signalQuality(rssi);
+    signal.className = `signal-${quality.level}`;
+    signal.title = quality.hint;
+    signal.textContent = `${rssi} dBm`;
+    const label = document.createElement('span');
+    label.className = 'signal-label';
+    label.textContent = quality.label;
+    signal.append(label);
+    row.append(name, signal);
     return row;
   }));
   $('networkList').hidden = networks.length === 0;
