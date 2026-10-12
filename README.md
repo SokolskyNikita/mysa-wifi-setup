@@ -18,6 +18,8 @@ Connect a **Mysa smart thermostat to Wi-Fi from your web browser** over Bluetoot
 2. Click **Pair**. The thermostat shows a code on its screen and tries to pair with your phone or laptop. If the codes match, click Pair/Accept on your device. It sometimes takes 2-3 tries.
 3. Enter the Wi-Fi name and password and click **Send**. The page tells you when the thermostat has joined.
 
+After pairing, you can optionally open **Networks seen by the thermostat** and click **Show networks** to see nearby network names and signal strength. This only displays the results; enter your network name yourself as usual. Click **Show networks** again to refresh the list.
+
 ## Troubleshooting
 - **Mysa not listed:** check for the Bluetooth icon, move closer or use *Show all nearby devices*.
 - **Pairing fails or times out:** remove "Mysa" from your system's Bluetooth devices (Forget / Unpair), then Reconnect and Pair again.

@@ -60,6 +60,13 @@
   p.hint { margin: 0 0 10px; color: var(--muted); font-size: 14px; }
   p.msg { margin: 10px 0 0; font-size: 14px; }
   p.msg:empty { display: none; }
+  .networks { margin: 12px 0; }
+  .networks summary { cursor: pointer; }
+  .network-list { max-height: 260px; overflow: auto; margin-top: 10px; }
+  .network-list table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .network-list th, .network-list td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+  .network-list th:first-child, .network-list td:first-child { overflow-wrap: anywhere; }
+  .network-list th:last-child, .network-list td:last-child { text-align: right; white-space: nowrap; }
   details.card summary { cursor: pointer; font-weight: 600; }
   pre#log { background: var(--log-bg); color: var(--log-text); border-radius: 8px; padding: 12px;
             font: 12px/1.5 ui-monospace, Menlo, monospace; max-height: 320px; overflow: auto;
@@ -117,6 +124,18 @@
 
   <section>
     <h2>4. Wi-Fi</h2>
+    <details class="networks">
+      <summary>Networks seen by the thermostat</summary>
+      <p class="hint">After pairing, check which networks your thermostat can see and their signal strength.</p>
+      <div class="row"><button id="showNetworks" disabled>Show networks</button></div>
+      <p id="networkMsg" class="msg" role="status" aria-live="polite"></p>
+      <div id="networkList" class="network-list" hidden>
+        <table aria-label="Networks seen by the thermostat">
+          <thead><tr><th scope="col">Network name</th><th scope="col">Signal</th></tr></thead>
+          <tbody id="networkRows"></tbody>
+        </table>
+      </div>
+    </details>
     <label for="ssid">Network name (2.4 GHz)</label>
     <input id="ssid" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
     <label for="pw">Password</label>
@@ -147,6 +166,8 @@ const CH_CONFIG  = '4d790001-7361-5769-4669-436f6e666967'; // write: config pack
 const CH_STATUS  = '4d790002-7361-5769-4669-436f6e666967'; // notify/read: status (needs an encrypted link)
 const CH_IDENT   = '4d790003-7361-5769-4669-436f6e666967'; // read: identify
 const SVC_SCAN   = '4d790000-7361-2053-5349-442b52535349'; // "Mysa SSID+RSSI"
+const CH_NETWORK = '4d790001-7361-2053-5349-442b52535349';
+const CH_NETWORK_COUNT = '4d790002-7361-2053-5349-442b52535349';
 const SVC_FILE   = 'ecaa050b-0da4-e394-d64c-5d08e47cb41d';
 const OPTIONAL_SERVICES = [SVC_WIFI, SVC_SCAN, SVC_FILE, 'device_information'];
 
@@ -230,6 +251,7 @@ function updateControls() {
   $('disconnect').disabled = busy || !isConnected;
   $('pair').disabled = busy || !isConnected;
   $('send').disabled = busy || !isConnected;
+  $('showNetworks').disabled = busy || !isConnected || !paired;
 }
 
 async function runAction(action) {
@@ -372,7 +394,7 @@ async function readDeviceInfo(server, wifiService) {
   try {
     const characteristic = await wifiService.getCharacteristic(CH_IDENT);
     const value = await characteristic.readValue();
-    rows.push(['Identify', `${decodeText(value)}  [${toHex(value)}]`]);
+    log(`Identify (raw): [${toHex(value)}]${value.byteLength === 2 ? `; uint16 LE: ${value.getUint16(0, true)}` : ''}`);
   } catch (error) {
     log(`identify read failed: ${error.message}`);
   }
@@ -395,6 +417,9 @@ function clearConnection() {
   statusChar = null;
   configChar = null;
   paired = false;
+  $('networkRows').replaceChildren();
+  $('networkList').hidden = true;
+  $('networkMsg').textContent = '';
   statusWaiters.slice().forEach(waiter => waiter.fail(new Error('Bluetooth connection lost')));
 }
 
@@ -504,6 +529,92 @@ async function pair() {
   return paired;
 }
 
+// Optional network visibility check. Results never populate the credential inputs.
+function decodeNetwork(value) {
+  // App format: [0x01, base64Length + 1, ...base64(SSID), signed RSSI].
+  if (value.byteLength < 3 || value.getUint8(0) !== 1) throw new Error('Invalid network record');
+  const length = value.getUint8(1);
+  if (length < 1 || value.byteLength !== length + 2) throw new Error('Invalid network record length');
+  const bytes = new Uint8Array(value.buffer, value.byteOffset + 2, length - 1);
+  const ssid = decoder.decode(Uint8Array.from(atob(String.fromCharCode(...bytes)), char => char.charCodeAt(0)));
+  return { ssid, rssi: value.getInt8(length + 1) };
+}
+
+function showNetworkRows(networks) {
+  $('networkRows').replaceChildren(...networks.map(({ ssid, rssi }) => {
+    const row = document.createElement('tr');
+    for (const text of [ssid || '(Hidden network)', `${rssi} dBm`]) {
+      const cell = document.createElement('td');
+      cell.textContent = text;
+      row.append(cell);
+    }
+    return row;
+  }));
+  $('networkList').hidden = networks.length === 0;
+}
+
+async function showNetworks() {
+  showNetworkRows([]);
+  setText('networkMsg', 'Checking networks seen by the thermostat…', 'msg');
+  const server = device?.gatt;
+  const deadline = Date.now() + 45000;
+  let timedOut = false;
+  async function scanIO(operation) {
+    if (!connected() || device.gatt !== server) throw new Error('Bluetooth connection lost');
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error('Network scan took too long. Try again.');
+    let timer;
+    try {
+      return await Promise.race([operation(), new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error('The thermostat did not answer. Reconnect and try again.'));
+        }, Math.min(10000, remaining));
+      })]);
+    } finally { clearTimeout(timer); }
+  }
+  try {
+    if (!paired) throw new Error('Pair with the thermostat first.');
+    const service = await scanIO(() => server.getPrimaryService(SVC_SCAN));
+    const countChar = await scanIO(() => service.getCharacteristic(CH_NETWORK_COUNT));
+    const networkChar = await scanIO(() => service.getCharacteristic(CH_NETWORK));
+    // Same scan refresh as the app; this does not write Wi-Fi credentials.
+    await scanIO(() => countChar.writeValueWithResponse(Uint8Array.of(1)));
+    await sleep(2000);
+    const countValue = await scanIO(() => countChar.readValue());
+    if (countValue.byteLength !== 2) throw new Error('Invalid network count from the thermostat.');
+    const count = countValue.getInt16(0, true);
+    if (count < 0) throw new Error('The thermostat is still scanning. Try again shortly.');
+    const limit = Math.min(count, 256);
+    const networks = new Map();
+    let skipped = 0;
+    for (let i = 0; i < limit; i++) {
+      const value = await scanIO(() => networkChar.readValue());
+      try {
+        const network = decodeNetwork(value);
+        const previous = networks.get(network.ssid);
+        if (!previous || network.rssi > previous.rssi) networks.set(network.ssid, network);
+      } catch {
+        skipped++;
+        log(`skipped unreadable network record ${i + 1}`);
+      }
+    }
+    if (!connected() || device.gatt !== server) throw new Error('Bluetooth connection lost');
+    const sorted = [...networks.values()].sort((a, b) => b.rssi - a.rssi || a.ssid.localeCompare(b.ssid));
+    showNetworkRows(sorted);
+    const message = sorted.length ? `${sorted.length} network name${sorted.length === 1 ? '' : 's'} seen, strongest signal first.`
+      : skipped ? 'The thermostat returned networks, but their names could not be read. Try again.' : 'No networks found. Try again in a moment.';
+    const extra = `${count > limit ? ` Showing results from the first ${limit} records.` : ''}${skipped ? ` ${skipped} unreadable record${skipped === 1 ? '' : 's'} skipped.` : ''}`;
+    setText('networkMsg', message + extra, `msg${skipped && !sorted.length ? ' err' : ''}`);
+    log(`network scan: ${count} records, ${sorted.length} names displayed, ${skipped} skipped`);
+  } catch (error) {
+    if (timedOut && server?.connected) server.disconnect();
+    const message = error.name === 'NotFoundError' ? 'Network listing is unavailable on this thermostat.' : error.message;
+    setText('networkMsg', message, 'msg err');
+    log(`network listing failed: ${error.name}: ${error.message}`);
+  }
+}
+
 function validateCredentials(ssid, password) {
   if (!ssid) return 'Enter the network name.';
   if (encoder.encode(ssid).length > 32) return 'Network names are at most 32 bytes long.';
@@ -586,6 +697,7 @@ function initialize() {
   $('disconnect').onclick = () => runAction(() => device?.gatt?.disconnect());
   $('pair').onclick = () => runAction(pair);
   $('send').onclick = () => runAction(sendWifi);
+  $('showNetworks').onclick = () => runAction(showNetworks);
   $('showPw').onchange = event => { $('pw').type = event.target.checked ? 'text' : 'password'; };
   $('copyLog').onclick = copyLog;
   updateControls();
