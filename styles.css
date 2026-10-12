@@ -1,0 +1,243 @@
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --text: #1b1f24;
+  --muted: #5f6b7a;
+  --border: #d9dee5;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --ok: #15803d;
+  --err: #b91c1c;
+  --signal-weak: #926000;
+  --warn-bg: #fef3c7;
+  --warn-text: #78350f;
+  --log-bg: #0f172a;
+  --log-text: #e2e8f0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --border: #30363d;
+    --accent: #3b82f6;
+    --ok: #4ade80;
+    --err: #f87171;
+    --signal-weak: #fbbf24;
+    --warn-bg: #3b2f0b;
+    --warn-text: #fde68a;
+    --log-bg: #010409;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    15px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 32px;
+}
+h1 {
+  font-size: 22px;
+  margin: 0 0 4px;
+}
+p.sub {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+a {
+  color: var(--accent);
+}
+section,
+details.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+ul {
+  margin: 0;
+  padding-left: 20px;
+}
+li {
+  margin: 4px 0;
+}
+label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 10px 0 4px;
+}
+label.inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.banner {
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 14px;
+  margin: 0;
+  font-size: 14px;
+}
+dt {
+  color: var(--muted);
+}
+dd {
+  margin: 0;
+  font-family: ui-monospace, Menlo, monospace;
+  word-break: break-all;
+}
+.status {
+  font-weight: 600;
+}
+.ok {
+  color: var(--ok);
+}
+.err {
+  color: var(--err);
+}
+p.hint {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+p.msg {
+  margin: 10px 0 0;
+  font-size: 14px;
+}
+p.msg:empty {
+  display: none;
+}
+.networks {
+  margin: 12px 0;
+}
+.network-list {
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 10px;
+}
+.network-list table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.network-list th,
+.network-list td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.network-list th:first-child,
+.network-list td:first-child {
+  overflow-wrap: anywhere;
+}
+.network-list th:last-child,
+.network-list td:last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+.signal-good {
+  color: var(--ok);
+}
+.signal-weak {
+  color: var(--signal-weak);
+}
+.signal-poor {
+  color: var(--err);
+}
+.signal-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+}
+.network-list .signal-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+details.card summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+pre#log {
+  background: var(--log-bg);
+  color: var(--log-text);
+  border-radius: 8px;
+  padding: 12px;
+  font:
+    12px/1.5 ui-monospace,
+    Menlo,
+    monospace;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 12px 0 0;
+}
+footer {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 0 16px 32px;
+}

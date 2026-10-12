@@ -1,727 +1,194 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
-<title>Mysa Wi-Fi setup over Bluetooth (no app needed)</title>
-<meta name="description" content="Connect a Mysa smart thermostat to Wi-Fi from your browser over Bluetooth, without the Mysa app or a Mysa account. Free and open source; runs locally in Chrome or Edge.">
-<link rel="canonical" href="https://sokolskynikita.github.io/mysa-wifi-setup/">
-<meta property="og:type" content="website">
-<meta property="og:title" content="Mysa Wi-Fi setup over Bluetooth">
-<meta property="og:description" content="Put a Mysa thermostat on Wi-Fi from your browser, without the Mysa app or account.">
-<meta property="og:url" content="https://sokolskynikita.github.io/mysa-wifi-setup/">
-<meta name="color-scheme" content="light dark">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232563eb'/><path d='M8 14a11 11 0 0 1 16 0M11.5 18a6 6 0 0 1 9 0' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/><circle cx='16' cy='23' r='2.2' fill='white'/></svg>">
-<script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebApplication","name":"Mysa Wi-Fi Setup","url":"https://sokolskynikita.github.io/mysa-wifi-setup/","description":"Connect a Mysa smart thermostat to Wi-Fi over Bluetooth from a web browser, without the Mysa app.","applicationCategory":"UtilitiesApplication","operatingSystem":"Chrome, Edge or Opera on macOS, Windows, ChromeOS, Android","offers":{"@type":"Offer","price":"0"}}
-</script>
-<style>
-  :root {
-    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #5f6b7a;
-    --border: #d9dee5; --accent: #2563eb; --accent-text: #ffffff;
-    --ok: #15803d; --err: #b91c1c; --signal-weak: #926000; --warn-bg: #fef3c7; --warn-text: #78350f;
-    --log-bg: #0f172a; --log-text: #e2e8f0;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0d1117; --card: #161b22; --text: #e6edf3; --muted: #8b949e;
-      --border: #30363d; --accent: #3b82f6; --ok: #4ade80; --err: #f87171; --signal-weak: #fbbf24;
-      --warn-bg: #3b2f0b; --warn-text: #fde68a; --log-bg: #010409;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 640px; margin: 0 auto; padding: 24px 16px 32px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  p.sub { margin: 0 0 16px; color: var(--muted); }
-  a { color: var(--accent); }
-  section, details.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-            padding: 16px; margin-bottom: 14px; }
-  h2 { font-size: 15px; margin: 0 0 10px; }
-  ul { margin: 0; padding-left: 20px; }
-  li { margin: 4px 0; }
-  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
-  label.inline { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-  input[type=text], input[type=password] { width: 100%; padding: 8px 10px; border: 1px solid var(--border);
-          border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 16px; }
-  button { min-height: 40px; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border);
-           background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-  button:disabled { opacity: .5; cursor: default; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .banner { border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; background: var(--warn-bg); color: var(--warn-text); }
-  dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0; font-size: 14px; }
-  dt { color: var(--muted); }
-  dd { margin: 0; font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
-  .status { font-weight: 600; }
-  .ok { color: var(--ok); } .err { color: var(--err); }
-  p.hint { margin: 0 0 10px; color: var(--muted); font-size: 14px; }
-  p.msg { margin: 10px 0 0; font-size: 14px; }
-  p.msg:empty { display: none; }
-  .networks { margin: 12px 0; }
-  .network-list { max-height: 260px; overflow: auto; margin-top: 10px; }
-  .network-list table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .network-list th, .network-list td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
-  .network-list th:first-child, .network-list td:first-child { overflow-wrap: anywhere; }
-  .network-list th:last-child, .network-list td:last-child { text-align: right; white-space: nowrap; }
-  .signal-good { color: var(--ok); }
-  .signal-weak { color: var(--signal-weak); }
-  .signal-poor { color: var(--err); }
-  .signal-label { display: block; font-size: 12px; font-weight: 600; }
-  .network-list .signal-note { margin: 8px 0 0; font-size: 12px; }
-  details.card summary { cursor: pointer; font-weight: 600; }
-  pre#log { background: var(--log-bg); color: var(--log-text); border-radius: 8px; padding: 12px;
-            font: 12px/1.5 ui-monospace, Menlo, monospace; max-height: 320px; overflow: auto;
-            white-space: pre-wrap; word-break: break-word; margin: 12px 0 0; }
-  footer { color: var(--muted); font-size: 13px; text-align: center; padding: 0 16px 32px; }
-</style>
-</head>
-<body>
-<main>
-  <h1>Mysa Wi-Fi setup</h1>
-  <p class="sub">Connect a Mysa smart thermostat to Wi-Fi over Bluetooth, straight from your browser, without the Mysa app or a Mysa account.
-    Your Wi-Fi password goes only to the thermostat; this page can't send anything over the internet.</p>
-
-  <div id="banner" class="banner" hidden></div>
-
-  <section>
-    <h2>Before you start</h2>
-    <ul>
-      <li>The thermostat's screen shows the <b>Bluetooth icon</b> (setup mode). If it doesn't, hold both arrow buttons
-        until the 10-second countdown ends and it restarts. If it shows a Wi-Fi icon instead, this page can't set it up.</li>
-      <li><b>Supported:</b> Mysa Baseboard Lite (tested), Mysa Baseboard V1 and V2, Mysa for In-Floor Heating and
-        Mysa for AC.</li>
-      <li><b>Coming soon:</b> Mysa Baseboard V3, Mysa for Central HVAC and the Mysa Climate Sensor. Besides Wi-Fi, they
-        need a credential file from Mysa's cloud that this page can't get yet. Use the Mysa app for those for now.</li>
-      <li>Use a <b>2.4 GHz</b> network with WPA2 or mixed WPA2/WPA3 security. Mysa can't join 5 GHz-only or WPA3-only networks.</li>
-      <li>Use Chrome, Edge or Opera on a Mac, Windows PC, Chromebook or Android phone, close to the thermostat.</li>
-    </ul>
-  </section>
-
-  <section>
-    <h2>1. Connect</h2>
-    <div>Status: <span id="state" class="status">not connected</span></div>
-    <div class="row">
-      <button class="primary" id="connect">Find Mysa</button>
-      <button id="connectAll">Show all nearby devices</button>
-      <button id="reconnect" hidden>Reconnect</button>
-      <button id="disconnect" disabled>Disconnect</button>
-    </div>
-  </section>
-
-  <section>
-    <h2>2. Device</h2>
-    <dl id="info"><dt>—</dt><dd>connect first</dd></dl>
-  </section>
-
-  <section>
-    <h2>3. Pair</h2>
-    <p class="hint">Click Pair. The thermostat will then show a code on its screen, then try to pair with your phone/laptop.
-      If the codes match, click Pair/Accept on your device. Sometimes takes 2-3 tries.</p>
-    <div>Pairing: <span id="pairState" class="status">not paired</span></div>
-    <div class="row">
-      <button class="primary" id="pair" disabled>Pair</button>
-    </div>
-  </section>
-
-  <section>
-    <h2>4. Wi-Fi</h2>
-    <div class="networks">
-      <p class="hint">After pairing, ask the thermostat to list the Wi-Fi networks it can see.</p>
-      <div class="row"><button id="showNetworks" disabled>Show networks</button></div>
-      <p id="networkMsg" class="msg" role="status" aria-live="polite"></p>
-      <div id="networkList" class="network-list" hidden>
-        <table aria-label="Networks seen by the thermostat">
-          <thead><tr><th scope="col">Network name</th><th scope="col">Signal</th></tr></thead>
-          <tbody id="networkRows"></tbody>
-        </table>
-        <p class="hint signal-note">Green: good (−70 dBm or stronger). Amber: weak (−71 to −79 dBm). Red: poor (−80 dBm or weaker). Signal quality is an estimate; interference can still affect reliability.</p>
-      </div>
-    </div>
-    <label for="ssid">Network name (2.4 GHz)</label>
-    <input id="ssid" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-    <label for="pw">Password</label>
-    <input id="pw" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-    <label class="inline"><input id="showPw" type="checkbox"> Show password</label>
-    <div class="row">
-      <button class="primary" id="send" disabled>Send to thermostat</button>
-    </div>
-    <p id="sendMsg" class="msg"></p>
-  </section>
-
-  <details class="card" id="logBox">
-    <summary>Technical log</summary>
-    <div class="row"><button id="copyLog">Copy log</button></div>
-    <pre id="log"></pre>
-  </details>
-</main>
-<footer>
-  Open source: <a href="https://github.com/SokolskyNikita/mysa-wifi-setup">github.com/SokolskyNikita/mysa-wifi-setup</a>.
-  Not affiliated with or endorsed by Mysa. Use at your own risk.
-</footer>
-
-<script>
-'use strict';
-// Bluetooth Wi-Fi provisioning protocol used by the official Mysa app.
-const SVC_WIFI   = '4d790000-7361-5769-4669-436f6e666967'; // ASCII "Mysa" + "WiFiConfig"
-const CH_CONFIG  = '4d790001-7361-5769-4669-436f6e666967'; // write: config packets
-const CH_STATUS  = '4d790002-7361-5769-4669-436f6e666967'; // notify/read: status (needs an encrypted link)
-const CH_IDENT   = '4d790003-7361-5769-4669-436f6e666967'; // read: identify
-const SVC_SCAN   = '4d790000-7361-2053-5349-442b52535349'; // "Mysa SSID+RSSI"
-const CH_NETWORK = '4d790001-7361-2053-5349-442b52535349';
-const CH_NETWORK_COUNT = '4d790002-7361-2053-5349-442b52535349';
-const SVC_FILE   = 'ecaa050b-0da4-e394-d64c-5d08e47cb41d';
-const OPTIONAL_SERVICES = [SVC_WIFI, SVC_SCAN, SVC_FILE, 'device_information'];
-
-const PACKET_TYPES = { START_CONFIG: 0x20, SSID: 0x21, PASSWORD: 0x22, END_CONFIG: 0x2f };
-const STATUS = {
-  START_CONFIG_READY: 0x20, SSID_RECEIVED: 0x21, PASSWORD_RECEIVED: 0x22,
-  CONNECTING: 0x40, CONNECTION_ESTABLISHED: 0x41, CONNECTION_FAILED: 0x42,
-  TIMEOUT: 0x80, INVALID_SEQUENCE: 0xfd, INTERNAL_ERROR: 0xff,
-};
-const STATUS_NAMES = Object.fromEntries(Object.entries(STATUS).map(([name, code]) => [code, name]));
-const FAILURE_HINT = {
-  [STATUS.CONNECTION_FAILED]: "The thermostat couldn't join the network. Check the password, that the network is 2.4 GHz with WPA2 (not WPA3-only) and that the signal reaches the thermostat.",
-  [STATUS.TIMEOUT]: 'The thermostat gave up waiting. Check the network name and signal, then try again.',
-  [STATUS.INVALID_SEQUENCE]: 'The thermostat lost track of the setup steps. Click Disconnect, then Reconnect and send again.',
-  [STATUS.INTERNAL_ERROR]: 'The thermostat reported an internal error. Reset it into setup mode and try again.',
-};
-const FAILURE_CODES = new Set(Object.keys(FAILURE_HINT).map(Number));
-const CONNECT_ATTEMPTS = 3;
-const CONNECT_RETRY_MS = 1500;
-const ACK_TIMEOUT_MS = 15000;
-const PAIR_TIMEOUT_MS = 90000;
-const JOIN_TIMEOUT_MS = 90000;
-const DEVICE_INFO = [
-  ['Manufacturer', 0x2a29], ['Model', 0x2a24], ['Serial', 0x2a25],
-  ['Hardware', 0x2a27], ['Firmware', 0x2a26], ['Software', 0x2a28],
-];
-
-// Browser support and shared state.
-const ua = navigator.userAgent;
-const OS = /Android/.test(ua) ? 'android'
-  : /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'ios'
-  : /CrOS/.test(ua) ? 'chromeos' : /Mac/.test(ua) ? 'mac' : /Win/.test(ua) ? 'windows'
-  : /Linux/.test(ua) ? 'linux' : 'other';
-
-const $ = id => document.getElementById(id);
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-let device = null;
-let statusChar = null;
-let configChar = null;
-let paired = false;
-let busy = false;
-let connecting = false;
-let statusHistory = [];  // Notifications in order, including those received during a write.
-let statusWaiters = [];  // Pending waitForStatus() calls.
-
-function connected() {
-  return !!(device?.gatt?.connected && statusChar && configChar);
-}
-
-// Keep UI updates and action locking separate from the Bluetooth protocol.
-function log(message) {
-  const timestamp = new Date().toLocaleTimeString();
-  const output = $('log');
-  output.textContent += `[${timestamp}] ${message}\n`;
-  output.scrollTop = output.scrollHeight;
-}
-
-function setText(id, text, className) {
-  const element = $(id);
-  element.textContent = text;
-  element.className = className;
-}
-
-function setState(text, cls = '') { setText('state', text, `status ${cls}`); }
-function setPairState(text, cls = '') { setText('pairState', text, `status ${cls}`); }
-function setMsg(text, cls = '') { setText('sendMsg', text, `msg ${cls}`); }
-
-function showBanner(text) {
-  $('banner').textContent = text;
-  $('banner').hidden = !text;
-}
-
-function updateControls() {
-  const supported = !!navigator.bluetooth && window.isSecureContext;
-  const isConnected = connected();
-  $('connect').disabled = $('connectAll').disabled = !supported || busy;
-  $('reconnect').hidden = !device || isConnected;
-  $('reconnect').disabled = busy;
-  $('disconnect').disabled = busy || !isConnected;
-  $('pair').disabled = busy || !isConnected;
-  $('send').disabled = busy || !isConnected;
-  $('showNetworks').disabled = busy || !isConnected || !paired;
-}
-
-async function runAction(action) {
-  if (busy) return;
-  busy = true;
-  updateControls();
-  try {
-    await action();
-  } catch (error) {
-    // Expected failures have more specific messages inside each action.
-    setState(`failed: ${error.message}`, 'err');
-    log(`failed: ${error.name}: ${error.message}`);
-    $('logBox').open = true;
-  } finally {
-    busy = false;
-    updateControls();
-  }
-}
-
-function supportProblem() {
-  if (!window.isSecureContext)
-    return 'Open this page over https:// (or http://localhost). Browsers turn Bluetooth off for insecure pages.';
-  if (navigator.bluetooth) return '';
-  if (OS === 'ios')
-    return "iPhone and iPad browsers don't support Web Bluetooth. Use Chrome or Edge on a computer or an Android phone.";
-  if (/Firefox\//.test(ua)) return "Firefox doesn't support Web Bluetooth. Open this page in Chrome or Edge.";
-  if (navigator.brave) return 'Brave turns Web Bluetooth off by default. Enable brave://flags/#brave-web-bluetooth-api, or use Chrome or Edge.';
-  if (OS === 'linux') return 'Chrome on Linux needs chrome://flags/#enable-experimental-web-platform-features enabled for Web Bluetooth.';
-  return "This browser doesn't support Web Bluetooth. Open this page in Chrome or Edge on a computer or an Android phone.";
-}
-
-// Packet encoding and ordered status acknowledgements.
-function toHex(value) {
-  return [...new Uint8Array(value.buffer, value.byteOffset, value.byteLength)]
-    .map(byte => byte.toString(16).padStart(2, '0')).join(' ');
-}
-
-function decodeText(value) {
-  return decoder.decode(value).replace(/\0+$/, '');
-}
-
-function statusName(code) {
-  return STATUS_NAMES[code] || `unknown 0x${code.toString(16)}`;
-}
-
-function encodePacket(type, text) {
-  // [type, length, base64(utf8(text)) as ASCII]
-  const base64 = btoa(String.fromCharCode(...encoder.encode(text)));
-  const bytes = new Uint8Array(2 + base64.length);
-  bytes[0] = type;
-  bytes[1] = base64.length;
-  for (let i = 0; i < base64.length; i++) bytes[2 + i] = base64.charCodeAt(i);
-  return bytes;
-}
-
-async function writePacket(bytes, label) {
-  const characteristic = configChar;
-  if (!connected()) throw new Error('Bluetooth connection lost');
-  log(`sending ${label}…`);
-  if (characteristic.properties.write) await characteristic.writeValueWithResponse(bytes);
-  else await characteristic.writeValueWithoutResponse(bytes);
-  log(`→ ${label} (${bytes.length} bytes)`);
-}
-
-function onStatus(event) {
-  if (event.target !== statusChar) return;
-  const value = event.target.value;
-  const code = value.byteLength ? value.getUint8(0) : -1;
-  log(`← ${statusName(code)} [${toHex(value)}]`);
-  statusHistory.push(code);
-  statusWaiters.slice().forEach(waiter => waiter.check());
-}
-
-function waitForStatus(code, fromIndex, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const waiter = {
-      check() {
-        for (let i = fromIndex; i < statusHistory.length; i++) {
-          const received = statusHistory[i];
-          if (received === code) return finish();
-          if (FAILURE_CODES.has(received)) {
-            return finish(Object.assign(new Error(statusName(received)), { code: received }));
-          }
-        }
-        // A disconnect may happen during the write, before this waiter is registered.
-        if (!connected()) finish(new Error('Bluetooth connection lost'));
-      },
-      fail: error => finish(error),
-    };
-    const timer = setTimeout(() => {
-      finish(new Error(`no ${statusName(code)} within ${timeoutMs / 1000} s`));
-    }, timeoutMs);
-
-    function finish(error) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      statusWaiters = statusWaiters.filter(pending => pending !== waiter);
-      if (error) reject(error);
-      else resolve();
-    }
-
-    statusWaiters.push(waiter);
-    waiter.check();
-  });
-}
-
-async function writeAndWait(bytes, label, expectedStatus) {
-  // Record the cursor before writing: a notification can arrive before the write resolves.
-  const fromIndex = statusHistory.length;
-  await writePacket(bytes, label);
-  await waitForStatus(expectedStatus, fromIndex, ACK_TIMEOUT_MS);
-}
-
-function withTimeout(promise, timeoutMs, message) {
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
-
-// Bluetooth connection lifecycle and optional device details.
-async function readDeviceInfo(server, wifiService) {
-  const rows = [['Bluetooth name', device.name || '(none)']];
-  try {
-    const service = await server.getPrimaryService('device_information');
-    for (const [name, uuid] of DEVICE_INFO) {
-      try {
-        const characteristic = await service.getCharacteristic(uuid);
-        rows.push([name, decodeText(await characteristic.readValue())]);
-      } catch {
-        // Optional: missing, or blocked by Web Bluetooth (e.g. serial number).
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; base-uri 'none'; form-action 'none'"
+    />
+    <title>Mysa Wi-Fi setup over Bluetooth (no app needed)</title>
+    <meta
+      name="description"
+      content="Connect a Mysa smart thermostat to Wi-Fi from your browser over Bluetooth, without the Mysa app or a Mysa account. Free and open source; runs locally in Chrome or Edge."
+    />
+    <link
+      rel="canonical"
+      href="https://sokolskynikita.github.io/mysa-wifi-setup/"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Mysa Wi-Fi setup over Bluetooth" />
+    <meta
+      property="og:description"
+      content="Put a Mysa thermostat on Wi-Fi from your browser, without the Mysa app or account."
+    />
+    <meta
+      property="og:url"
+      content="https://sokolskynikita.github.io/mysa-wifi-setup/"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232563eb'/><path d='M8 14a11 11 0 0 1 16 0M11.5 18a6 6 0 0 1 9 0' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/><circle cx='16' cy='23' r='2.2' fill='white'/></svg>"
+    />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Mysa Wi-Fi Setup",
+        "url": "https://sokolskynikita.github.io/mysa-wifi-setup/",
+        "description": "Connect a Mysa smart thermostat to Wi-Fi over Bluetooth from a web browser, without the Mysa app.",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Chrome, Edge or Opera on macOS, Windows, ChromeOS, Android",
+        "offers": { "@type": "Offer", "price": "0" }
       }
-    }
-  } catch (error) {
-    log(`device info service unavailable: ${error.message}`);
-  }
-  try {
-    const characteristic = await wifiService.getCharacteristic(CH_IDENT);
-    const value = await characteristic.readValue();
-    log(`Identify (raw): [${toHex(value)}]${value.byteLength === 2 ? `; uint16 LE: ${value.getUint16(0, true)}` : ''}`);
-  } catch (error) {
-    log(`identify read failed: ${error.message}`);
-  }
-  return rows;
-}
+    </script>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Mysa Wi-Fi setup</h1>
+      <p class="sub">
+        Connect a Mysa smart thermostat to Wi-Fi over Bluetooth, straight from
+        your browser, without the Mysa app or a Mysa account. Your Wi-Fi
+        password goes only to the thermostat; this page can't send anything over
+        the internet.
+      </p>
 
-function showDeviceInfo(rows) {
-  $('info').replaceChildren(...rows.flatMap(([name, value]) => {
-    const term = document.createElement('dt');
-    term.textContent = name;
-    const description = document.createElement('dd');
-    description.textContent = value;
-    return [term, description];
-  }));
-  rows.forEach(([name, value]) => log(`${name}: ${value}`));
-}
+      <div id="banner" class="banner" hidden></div>
 
-function clearConnection() {
-  statusChar?.removeEventListener('characteristicvaluechanged', onStatus);
-  statusChar = null;
-  configChar = null;
-  paired = false;
-  $('networkRows').replaceChildren();
-  $('networkList').hidden = true;
-  $('networkMsg').textContent = '';
-  statusWaiters.slice().forEach(waiter => waiter.fail(new Error('Bluetooth connection lost')));
-}
+      <section>
+        <h2>Before you start</h2>
+        <ul>
+          <li>
+            The thermostat's screen shows the <b>Bluetooth icon</b> (setup
+            mode). If it doesn't, hold both arrow buttons until the 10-second
+            countdown ends and it restarts. If it shows a Wi-Fi icon instead,
+            this page can't set it up.
+          </li>
+          <li>
+            <b>Supported:</b> Mysa Baseboard Lite (tested), Mysa Baseboard V1
+            and V2, Mysa for In-Floor Heating and Mysa for AC.
+          </li>
+          <li>
+            <b>Coming soon:</b> Mysa Baseboard V3, Mysa for Central HVAC and the
+            Mysa Climate Sensor. Besides Wi-Fi, they need a credential file from
+            Mysa's cloud that this page can't get yet. Use the Mysa app for
+            those for now.
+          </li>
+          <li>
+            Use a <b>2.4 GHz</b> network with WPA2 or mixed WPA2/WPA3 security.
+            Mysa can't join 5 GHz-only or WPA3-only networks.
+          </li>
+          <li>
+            Use Chrome, Edge or Opera on a Mac, Windows PC, Chromebook or
+            Android phone, close to the thermostat.
+          </li>
+        </ul>
+      </section>
 
-function onDisconnected(event) {
-  // Ignore a queued event from an old device or a connection already re-established.
-  if (event.target !== device || device.gatt.connected) return;
-  clearConnection();
-  if (connecting) return;
-  log('disconnected');
-  setState('disconnected');
-  setPairState('not paired');
-  updateControls();
-}
+      <section>
+        <h2>1. Connect</h2>
+        <div>Status: <span id="state" class="status">not connected</span></div>
+        <div class="row">
+          <button class="primary" id="connect">Find Mysa</button>
+          <button id="connectAll">Show all nearby devices</button>
+          <button id="reconnect" hidden>Reconnect</button>
+          <button id="disconnect" disabled>Disconnect</button>
+        </div>
+      </section>
 
-async function choose(acceptAll) {
-  let chosen;
-  try {
-    chosen = await navigator.bluetooth.requestDevice(acceptAll
-      ? { acceptAllDevices: true, optionalServices: OPTIONAL_SERVICES }
-      : { filters: [{ services: [SVC_WIFI] }, { namePrefix: 'Mysa' }, { namePrefix: 'MYSA' }, { namePrefix: 'mysa' }],
-          optionalServices: OPTIONAL_SERVICES });
-  } catch (error) {
-    if (error.name === 'NotFoundError') {
-      log('no device chosen');
-      setState('no device chosen. Is the Bluetooth icon on the thermostat? Move closer, or try "Show all nearby devices".');
-    } else {
-      log(`device chooser failed: ${error.name}: ${error.message}`);
-      setState(error.message, 'err');
-    }
-    return;
-  }
-  if (device !== chosen) {
-    if (device) {
-      device.removeEventListener('gattserverdisconnected', onDisconnected);
-      if (device.gatt?.connected) device.gatt.disconnect();
-    }
-    clearConnection();
-    device = chosen;
-    device.addEventListener('gattserverdisconnected', onDisconnected);
-  }
-  await connect();
-}
+      <section>
+        <h2>2. Device</h2>
+        <dl id="info">
+          <dt>—</dt>
+          <dd>connect first</dd>
+        </dl>
+      </section>
 
-async function connect() {
-  connecting = true;
-  clearConnection();
-  statusHistory = [];
-  setState('connecting…');
-  setPairState('not paired');
-  try {
-    for (let attempt = 1; attempt <= CONNECT_ATTEMPTS; attempt++) {
-      try {
-        log(`connecting to "${device.name || device.id}"${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService(SVC_WIFI);
-        const status = await service.getCharacteristic(CH_STATUS);
-        const config = await service.getCharacteristic(CH_CONFIG);
-        statusChar = status;
-        configChar = config;
-        status.addEventListener('characteristicvaluechanged', onStatus);
-        await status.startNotifications();
-        log(`config characteristic: write=${config.properties.write} writeWithoutResponse=${config.properties.writeWithoutResponse}`);
-        const rows = await readDeviceInfo(server, service);
-        if (!connected()) throw new Error('Bluetooth connection lost');
-        showDeviceInfo(rows);
-        setState('connected', 'ok');
-        log('next: Pair (step 3)');
-        return;
-      } catch (error) {
-        log(`connect failed: ${error.name}: ${error.message}`);
-        clearConnection();
-        if (device.gatt?.connected) device.gatt.disconnect();
-        if (error.name === 'NotFoundError' && /service/i.test(error.message)) {
-          setState("this device isn't a Mysa in setup mode (no Wi-Fi setup service)", 'err');
-          return;
-        }
-        if (attempt < CONNECT_ATTEMPTS) await sleep(CONNECT_RETRY_MS);
-      }
-    }
-    setState("couldn't connect. Move closer and click Reconnect.", 'err');
-    $('logBox').open = true;
-  } finally {
-    connecting = false;
-  }
-}
+      <section>
+        <h2>3. Pair</h2>
+        <p class="hint">
+          Click Pair. The thermostat will then show a code on its screen, then
+          try to pair with your phone/laptop. If the codes match, click
+          Pair/Accept on your device. Sometimes takes 2-3 tries.
+        </p>
+        <div>
+          Pairing: <span id="pairState" class="status">not paired</span>
+        </div>
+        <div class="row">
+          <button class="primary" id="pair" disabled>Pair</button>
+        </div>
+      </section>
 
-// Pairing and Wi-Fi provisioning, in the same order as the official app.
-async function pair() {
-  // The status characteristic needs an encrypted link, so reading it makes the OS
-  // pair: the thermostat shows a passkey and the OS (or browser) prompts for it.
-  paired = false;
-  setPairState('waiting for the code…');
-  log('pairing: the thermostat should now show a code');
-  try {
-    const characteristic = statusChar;
-    if (!connected()) throw new Error('Bluetooth connection lost');
-    const value = await withTimeout(characteristic.readValue(), PAIR_TIMEOUT_MS, 'no answer within 90 s');
-    if (!connected() || statusChar !== characteristic) throw new Error('Bluetooth connection lost');
-    paired = true;
-    setPairState('paired', 'ok');
-    log(`paired; status ${value.byteLength ? `${statusName(value.getUint8(0))} [${toHex(value)}]` : '(empty)'}`);
-  } catch (error) {
-    setPairState(`failed: ${error.message}`, 'err');
-    log(`pairing failed: ${error.name}: ${error.message}`);
-    log(`tip: remove "Mysa" from this device's Bluetooth settings (Forget / Unpair), then Reconnect and Pair again (it sometimes takes 2-3 tries)`);
-  }
-  return paired;
-}
+      <section>
+        <h2>4. Wi-Fi</h2>
+        <div class="networks">
+          <p class="hint">
+            After pairing, ask the thermostat to list the Wi-Fi networks it can
+            see.
+          </p>
+          <div class="row">
+            <button id="showNetworks" disabled>Show networks</button>
+          </div>
+          <p id="networkMsg" class="msg" role="status" aria-live="polite"></p>
+          <div id="networkList" class="network-list" hidden>
+            <table aria-label="Networks seen by the thermostat">
+              <thead>
+                <tr>
+                  <th scope="col">Network name</th>
+                  <th scope="col">Signal</th>
+                </tr>
+              </thead>
+              <tbody id="networkRows"></tbody>
+            </table>
+            <p class="hint signal-note">
+              Green: good (−70 dBm or stronger). Amber: weak (−71 to −79 dBm).
+              Red: poor (−80 dBm or weaker). Signal quality is an estimate;
+              interference can still affect reliability.
+            </p>
+          </div>
+        </div>
+        <label for="ssid">Network name (2.4 GHz)</label>
+        <input
+          id="ssid"
+          type="text"
+          autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+        />
+        <label for="pw">Password</label>
+        <input
+          id="pw"
+          type="password"
+          autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+        />
+        <label class="inline"
+          ><input id="showPw" type="checkbox" /> Show password</label
+        >
+        <div class="row">
+          <button class="primary" id="send" disabled>Send to thermostat</button>
+        </div>
+        <p id="sendMsg" class="msg"></p>
+      </section>
 
-// Optional network visibility check. Results never populate the credential inputs.
-function decodeNetwork(value) {
-  // App format: [0x01, base64Length + 1, ...base64(SSID), signed RSSI].
-  if (value.byteLength < 3 || value.getUint8(0) !== 1) throw new Error('Invalid network record');
-  const length = value.getUint8(1);
-  if (length < 1 || value.byteLength !== length + 2) throw new Error('Invalid network record length');
-  const bytes = new Uint8Array(value.buffer, value.byteOffset + 2, length - 1);
-  const ssid = decoder.decode(Uint8Array.from(atob(String.fromCharCode(...bytes)), char => char.charCodeAt(0)));
-  return { ssid, rssi: value.getInt8(length + 1) };
-}
+      <details class="card" id="logBox">
+        <summary>Technical log</summary>
+        <div class="row"><button id="copyLog">Copy log</button></div>
+        <pre id="log"></pre>
+      </details>
+    </main>
+    <footer>
+      Open source:
+      <a href="https://github.com/SokolskyNikita/mysa-wifi-setup"
+        >github.com/SokolskyNikita/mysa-wifi-setup</a
+      >. Not affiliated with or endorsed by Mysa. Use at your own risk.
+    </footer>
 
-function signalQuality(rssi) {
-  // General Wi-Fi guidance, not a Mysa-specific minimum or a connectivity test.
-  if (rssi >= -70) return { level: 'good', label: 'Good', hint: 'Likely sufficient for normal thermostat use.' };
-  if (rssi > -80) return { level: 'weak', label: 'Weak', hint: 'The connection may be unreliable. Improve Wi-Fi coverage if possible.' };
-  return { level: 'poor', label: 'Poor', hint: 'An unreliable connection is likely. Improve Wi-Fi coverage.' };
-}
-
-function showNetworkRows(networks) {
-  $('networkRows').replaceChildren(...networks.map(({ ssid, rssi }) => {
-    const row = document.createElement('tr');
-    const name = document.createElement('td');
-    name.textContent = ssid || '(Hidden network)';
-    const signal = document.createElement('td');
-    const quality = signalQuality(rssi);
-    signal.className = `signal-${quality.level}`;
-    signal.title = quality.hint;
-    signal.textContent = `${rssi} dBm`;
-    const label = document.createElement('span');
-    label.className = 'signal-label';
-    label.textContent = quality.label;
-    signal.append(label);
-    row.append(name, signal);
-    return row;
-  }));
-  $('networkList').hidden = networks.length === 0;
-}
-
-async function showNetworks() {
-  showNetworkRows([]);
-  setText('networkMsg', 'Checking networks seen by the thermostat…', 'msg');
-  const server = device?.gatt;
-  const deadline = Date.now() + 45000;
-  let timedOut = false;
-  async function scanIO(operation) {
-    if (!connected() || device.gatt !== server) throw new Error('Bluetooth connection lost');
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new Error('Network scan took too long. Try again.');
-    let timer;
-    try {
-      return await Promise.race([operation(), new Promise((_, reject) => {
-        timer = setTimeout(() => {
-          timedOut = true;
-          reject(new Error('The thermostat did not answer. Reconnect and try again.'));
-        }, Math.min(10000, remaining));
-      })]);
-    } finally { clearTimeout(timer); }
-  }
-  try {
-    if (!paired) throw new Error('Pair with the thermostat first.');
-    const service = await scanIO(() => server.getPrimaryService(SVC_SCAN));
-    const countChar = await scanIO(() => service.getCharacteristic(CH_NETWORK_COUNT));
-    const networkChar = await scanIO(() => service.getCharacteristic(CH_NETWORK));
-    // Same scan refresh as the app; this does not write Wi-Fi credentials.
-    await scanIO(() => countChar.writeValueWithResponse(Uint8Array.of(1)));
-    await sleep(2000);
-    const countValue = await scanIO(() => countChar.readValue());
-    if (countValue.byteLength !== 2) throw new Error('Invalid network count from the thermostat.');
-    const count = countValue.getInt16(0, true);
-    if (count < 0) throw new Error('The thermostat is still scanning. Try again shortly.');
-    const limit = Math.min(count, 256);
-    const networks = new Map();
-    let skipped = 0;
-    for (let i = 0; i < limit; i++) {
-      const value = await scanIO(() => networkChar.readValue());
-      try {
-        const network = decodeNetwork(value);
-        const previous = networks.get(network.ssid);
-        if (!previous || network.rssi > previous.rssi) networks.set(network.ssid, network);
-      } catch {
-        skipped++;
-        log(`skipped unreadable network record ${i + 1}`);
-      }
-    }
-    if (!connected() || device.gatt !== server) throw new Error('Bluetooth connection lost');
-    const sorted = [...networks.values()].sort((a, b) => b.rssi - a.rssi || a.ssid.localeCompare(b.ssid));
-    showNetworkRows(sorted);
-    const message = sorted.length ? `${sorted.length} network name${sorted.length === 1 ? '' : 's'} seen, strongest signal first.`
-      : skipped ? 'The thermostat returned networks, but their names could not be read. Try again.' : 'No networks found. Try again in a moment.';
-    const extra = `${count > limit ? ` Showing results from the first ${limit} records.` : ''}${skipped ? ` ${skipped} unreadable record${skipped === 1 ? '' : 's'} skipped.` : ''}`;
-    setText('networkMsg', message + extra, `msg${skipped && !sorted.length ? ' err' : ''}`);
-    log(`network scan: ${count} records, ${sorted.length} names displayed, ${skipped} skipped`);
-  } catch (error) {
-    if (timedOut && server?.connected) server.disconnect();
-    const message = error.name === 'NotFoundError' ? 'Network listing is unavailable on this thermostat.' : error.message;
-    setText('networkMsg', message, 'msg err');
-    log(`network listing failed: ${error.name}: ${error.message}`);
-  }
-}
-
-function validateCredentials(ssid, password) {
-  if (!ssid) return 'Enter the network name.';
-  if (encoder.encode(ssid).length > 32) return 'Network names are at most 32 bytes long.';
-  if (password.length > 0 && password.length < 8) return 'Wi-Fi (WPA2) passwords are at least 8 characters.';
-  if (password.length > 63 && !/^[0-9a-f]{64}$/i.test(password)) return 'Wi-Fi (WPA2) passwords are at most 63 characters.';
-  return '';
-}
-
-async function sendWifi() {
-  const ssid = $('ssid').value;
-  const password = $('pw').value;
-  const problem = validateCredentials(ssid, password);
-  if (problem) {
-    setMsg(problem, 'err');
-    return;
-  }
-  if (!password && !confirm('No password entered. Only continue if this is an open network.')) return;
-  setMsg('');
-  if (!paired && !(await pair())) {
-    setMsg('Pair first (step 3).', 'err');
-    return;
-  }
-  try {
-    setState('sending…');
-    await writeAndWait(Uint8Array.of(PACKET_TYPES.START_CONFIG), 'START_CONFIG', STATUS.START_CONFIG_READY);
-    await writeAndWait(encodePacket(PACKET_TYPES.SSID, ssid), `SSID "${ssid}"`, STATUS.SSID_RECEIVED);
-    await writeAndWait(encodePacket(PACKET_TYPES.PASSWORD, password), `PASSWORD (${password.length} chars)`, STATUS.PASSWORD_RECEIVED);
-
-    const fromIndex = statusHistory.length;
-    await writePacket(Uint8Array.of(PACKET_TYPES.END_CONFIG), 'END_CONFIG');
-    setState('thermostat is joining Wi-Fi…');
-    setMsg('Waiting for the thermostat to join the network (up to 90 s)…');
-    await waitForStatus(STATUS.CONNECTION_ESTABLISHED, fromIndex, JOIN_TIMEOUT_MS);
-    setState('on Wi-Fi', 'ok');
-    setMsg(`Done: the thermostat joined "${ssid}". If your model supports HomeKit, you can now add it to Apple Home or Home Assistant (HomeKit Device integration) with its setup code.`, 'ok');
-    log('done: the thermostat reports it joined the network');
-    $('pw').value = '';
-  } catch (error) {
-    setState('failed', 'err');
-    setMsg(FAILURE_HINT[error.code] || `Failed: ${error.message}. Check the technical log below, then try again.`, 'err');
-    log(`failed: ${error.message}`);
-    $('logBox').open = true;
-  }
-}
-
-// Page initialization and non-Bluetooth actions.
-async function copyLog() {
-  try {
-    if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable in this browser.');
-    await navigator.clipboard.writeText($('log').textContent);
-    $('copyLog').textContent = 'Copied';
-    setTimeout(() => { $('copyLog').textContent = 'Copy log'; }, 1500);
-  } catch (error) {
-    log(`copy failed: ${error.message}`);
-  }
-}
-
-async function checkBluetoothAvailability() {
-  try {
-    const available = await navigator.bluetooth.getAvailability();
-    showBanner(available ? '' : 'Bluetooth looks turned off or missing on this device. Turn it on, then try again.');
-  } catch {
-    // This optional check must not prevent opening the device chooser.
-  }
-}
-
-function initialize() {
-  const problem = supportProblem();
-  if (problem) {
-    showBanner(problem);
-    setState('unavailable', 'err');
-  } else if (navigator.bluetooth.getAvailability) {
-    checkBluetoothAvailability();
-    navigator.bluetooth.addEventListener?.('availabilitychanged', checkBluetoothAvailability);
-  }
-
-  $('connect').onclick = () => runAction(() => choose(false));
-  $('connectAll').onclick = () => runAction(() => choose(true));
-  $('reconnect').onclick = () => runAction(() => device && connect());
-  $('disconnect').onclick = () => runAction(() => device?.gatt?.disconnect());
-  $('pair').onclick = () => runAction(pair);
-  $('send').onclick = () => runAction(sendWifi);
-  $('showNetworks').onclick = () => runAction(showNetworks);
-  $('showPw').onchange = event => { $('pw').type = event.target.checked ? 'text' : 'password'; };
-  $('copyLog').onclick = copyLog;
-  updateControls();
-}
-
-initialize();
-</script>
-</body>
+    <script type="module" src="./app.js"></script>
+  </body>
 </html>
