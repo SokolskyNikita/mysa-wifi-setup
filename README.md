@@ -12,8 +12,11 @@ Connect a **Mysa smart thermostat to Wi-Fi from your web browser** over Bluetoot
 
 ## Models
 
-- **Supported:** Mysa Baseboard Lite (tested), Mysa Baseboard V1 and V2, Mysa for In-Floor Heating and Mysa for AC. Tried another model? Please open an issue with the result.
+- **Hardware-tested:** Mysa Baseboard Lite (`BB-V2-0-L`, firmware `3.17.5.13`).
+- **App-derived compatibility:** Baseboard V1/V2, In-floor and AC have legacy setup paths, but BLE availability and this page's behavior need validation on each model. Please report results for your model.
 - **Coming soon:** Mysa Baseboard V3, Mysa for Central HVAC and the Mysa Climate Sensor. Use the Mysa app for these for now.
+
+For packet formats and validation limits, see the public [Bluetooth reference](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/bluetooth.md).
 
 ## Steps
 
