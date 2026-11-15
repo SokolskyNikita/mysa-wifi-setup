@@ -1,12 +1,14 @@
 # Mysa Wi-Fi setup over Bluetooth (no app needed)
 
+> Unofficial and unaffiliated with Mysa. Use at your own risk.
+
 Connect a **Mysa smart thermostat to Wi-Fi from your web browser** over Bluetooth. You don't need the Mysa app or a Mysa account, and there's nothing to install.
 
 **▶ Open it: <https://sokolskynikita.github.io/mysa-wifi-setup/>**
 
 ## What you need
 
-- A Mysa showing the **Bluetooth icon** (setup mode). To get there, hold both arrow buttons until the 10-second countdown ends and it restarts.
+- A Mysa showing the **Bluetooth icon** (setup mode). A new thermostat starts there. To put one back into setup mode, hold both arrow buttons until the 10-second countdown ends and it restarts. **That resets it:** the thermostat forgets its Wi-Fi, its Apple Home (HomeKit) pairing, its schedule and its settings ([Mysa's instructions](https://help.getmysa.com/articles/2029638624-removing-resetting-baseboard)).
 - A **2.4 GHz** Wi-Fi network with WPA2 or mixed WPA2/WPA3. Mysa can't join 5 GHz-only or WPA3-only networks.
 - **Chrome, Edge or Opera** on macOS, Windows, ChromeOS or Android. Not supported: iPhone/iPad, Firefox, Safari. On Linux, enable `chrome://flags/#enable-experimental-web-platform-features`.
 
@@ -14,9 +16,9 @@ Connect a **Mysa smart thermostat to Wi-Fi from your web browser** over Bluetoot
 
 - **Hardware-tested:** Mysa Baseboard Lite (`BB-V2-0-L`, firmware `3.17.5.13`).
 - **App-derived compatibility:** Baseboard V1/V2, In-floor and AC have legacy setup paths, but BLE availability and this page's behavior need validation on each model. Please report results for your model.
-- **Coming soon:** Mysa Baseboard V3, Mysa for Central HVAC and the Mysa Climate Sensor. Use the Mysa app for these for now.
+- **Not supported:** Mysa Baseboard V3, Mysa for Central HVAC and the Mysa Climate Sensor. Besides Wi-Fi they need a credential file from Mysa's cloud, so use the Mysa app for them.
 
-For packet formats and validation limits, see the public [Bluetooth reference](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/bluetooth.md).
+For packet formats and validation limits, see the [Bluetooth protocol reference](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/reference/protocol/bluetooth.md).
 
 ## Steps
 
@@ -26,7 +28,7 @@ For packet formats and validation limits, see the public [Bluetooth reference](h
 
 After pairing, click **Show networks** to ask the thermostat for nearby network names and signal strength. This only displays the results; enter your network name yourself as usual. Click **Show networks** again to refresh the list.
 
-Signal readings include colors and text labels: **Good** (green, −70 dBm or stronger), **Weak** (amber, −71 to −79 dBm), and **Poor** (red, −80 dBm or weaker). These are approximate Wi-Fi quality bands based on [Cisco's RSSI guidance](https://www.cisco.com/c/en/us/support/docs/smb/wireless/CB-Wireless-Mesh/1902-tz-Troubleshooting-Traditional-Cisco-Wireless-Network.html), not Mysa-certified operating limits. RSSI alone cannot account for interference or prove that a connection works.
+Signal is labelled **Good** (−70 dBm or stronger), **Weak** (−71 to −79 dBm) or **Poor** (−80 dBm or weaker). The bands are approximate, from [Cisco's RSSI guidance](https://www.cisco.com/c/en/us/support/docs/smb/wireless/CB-Wireless-Mesh/1902-tz-Troubleshooting-Traditional-Cisco-Wireless-Network.html), and are not Mysa's limits.
 
 ## Troubleshooting
 
@@ -36,7 +38,7 @@ Signal readings include colors and text labels: **Good** (green, −70 dBm or st
 
 ## Home Assistant
 
-Once the Mysa is on Wi-Fi, we recommend **[Mysa Local](https://github.com/SokolskyNikita/mysa-homeassistant)** (install through HACS). It controls the thermostat over your own network, with your Mysa account as an optional extra. You can also add it to Apple Home with its HomeKit setup code.
+Once the Mysa is on Wi-Fi, we recommend **[Mysa Local](https://github.com/SokolskyNikita/mysa-homeassistant)** (install through Marketplace, or HACS before Home Assistant 2026.11). It controls the thermostat over your own network, with your Mysa account as an optional extra. You can also add it to Apple Home with its HomeKit setup code.
 
 ## Privacy
 
@@ -55,8 +57,6 @@ python3 -m http.server 8000
 ```
 
 Then open <http://localhost:8000/> in a supported browser.
-
-The page is split into a small set of files: `index.html` holds the content, `styles.css` holds its presentation, `app.js` connects the page UI, `browser-bluetooth.js` handles browser Bluetooth setup and device access, and `mysa.js` implements the Mysa Bluetooth protocol.
 
 ---
 
