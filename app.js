@@ -236,7 +236,7 @@ async function sendWifi() {
     setState("sending…");
     await mysa.sendWifi(ssid, password, () => {
       setState("thermostat is joining Wi-Fi…");
-      setMsg("Waiting for the thermostat to join the network (up to 90 s)…");
+      setMsg("Waiting for the thermostat to join the network (up to 4 minutes)…");
     });
     setState("on Wi-Fi", "ok");
     setMsg(
