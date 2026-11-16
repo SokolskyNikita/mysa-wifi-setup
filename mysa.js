@@ -85,9 +85,12 @@ const WPA2_HEX_KEY_LENGTH = 64;
 const MILLISECONDS_PER_SECOND = 1_000;
 const CONNECT_ATTEMPTS = 3;
 const CONNECT_RETRY_MS = 1_500;
-const ACK_TIMEOUT_MS = 15_000;
+// The acknowledgement and join limits are the ones Mysa's app uses (60 s for
+// each step, 240 s to join). A thermostat reports a failed join itself, so the
+// long limit is only reached when it stays silent.
+const ACK_TIMEOUT_MS = 60_000;
 const PAIR_TIMEOUT_MS = 90_000;
-const JOIN_TIMEOUT_MS = 90_000;
+const JOIN_TIMEOUT_MS = 240_000;
 const SCAN_TIMEOUT_MS = 45_000;
 const SCAN_OPERATION_TIMEOUT_MS = 10_000;
 const SCAN_SETTLE_MS = 2_000;
@@ -137,7 +140,8 @@ function encodeStringCommand(command, text) {
 
 function decodeNetworkRecord(value) {
   // [type:u8, length:u8, ASCII(Base64(UTF-8(SSID))), RSSI:i8].
-  // Unlike string commands, length includes the final signed RSSI byte.
+  // Unlike string commands, length includes the final signed RSSI byte. Bytes
+  // after the stated length are ignored, as Mysa's app ignores them.
   const minimumBytes = NETWORK_RECORD.HEADER_BYTES + NETWORK_RECORD.RSSI_BYTES;
   const bytes = asBytes(value);
   const [recordType, payloadLength] = bytes;
@@ -146,23 +150,22 @@ function decodeNetworkRecord(value) {
   }
   if (
     payloadLength < NETWORK_RECORD.RSSI_BYTES ||
-    bytes.length !== NETWORK_RECORD.HEADER_BYTES + payloadLength
+    bytes.length < NETWORK_RECORD.HEADER_BYTES + payloadLength
   ) {
     throw new Error("Invalid network record length");
   }
 
-  const base64Bytes = bytes.subarray(
-    NETWORK_RECORD.HEADER_BYTES,
-    -NETWORK_RECORD.RSSI_BYTES,
-  );
+  const rssiOffset =
+    NETWORK_RECORD.HEADER_BYTES + payloadLength - NETWORK_RECORD.RSSI_BYTES;
+  const base64Bytes = bytes.subarray(NETWORK_RECORD.HEADER_BYTES, rssiOffset);
   const ssidBytes = Uint8Array.from(
     atob(String.fromCharCode(...base64Bytes)),
     (character) => character.charCodeAt(0),
   );
-  const rssiOffset = value.byteLength - NETWORK_RECORD.RSSI_BYTES;
   return {
     ssid: utf8Decoder.decode(ssidBytes),
-    rssi: value.getInt8(rssiOffset), // Signed dBm, measured by the thermostat.
+    // Signed dBm, measured by the thermostat.
+    rssi: (bytes[rssiOffset] << 24) >> 24,
   };
 }
 
